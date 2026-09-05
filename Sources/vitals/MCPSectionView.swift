@@ -35,8 +35,8 @@ final class MCPHeaderView: NSView {
 
     override func layout() {
         super.layout()
-        let inset = 16.0
-        let copyWidth = 66.0
+        let inset: CGFloat = 16
+        let copyWidth: CGFloat = 66
         sectionLabel.frame = NSRect(x: inset, y: 6, width: 100, height: 14)
         detailLabel.frame = NSRect(x: inset + 100, y: 6, width: bounds.width - inset * 2 - 100 - copyWidth - 8, height: 14)
         copyAllLabel.frame = NSRect(x: bounds.width - inset - copyWidth, y: 4, width: copyWidth, height: 18)
@@ -124,7 +124,7 @@ final class MCPRowView: NSView {
 
     override func layout() {
         super.layout()
-        let inset = 16.0
+        let inset: CGFloat = 16
         let width = bounds.width
         let scopeWidth = 58.0
         let toolsWidth = 118.0
