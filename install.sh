@@ -13,7 +13,14 @@ mkdir -p "$HOME/Applications" "$HOME/Library/LaunchAgents"
 rm -rf "$app"
 cp -R build/Vitals.app "$app"
 sed "s|{app}|$app|" "launchd/$label.plist" > "$plist"
-launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$plist"
+domain="gui/$(id -u)"
+launchctl bootout "$domain/$label" 2>/dev/null || true
+# bootout returns before the service is gone; bootstrapping too early fails
+# with "Input/output error".
+for _ in $(seq 1 50); do
+    launchctl print "$domain/$label" > /dev/null 2>&1 || break
+    sleep 0.1
+done
+launchctl bootstrap "$domain" "$plist"
 "$app/Contents/MacOS/vitals" snapshot > /dev/null
 echo "installed $app · agent $label running"
