@@ -33,6 +33,17 @@ While a warning is active and fresh it hands the advice to a running agent
 as additional context, once per session per 10 minutes; it always exits 0
 and cannot block a tool call. `vitals budget` prints the same picture.
 
+## API keys
+
+`~/.config/vitals/keys.json` is an index of where secrets live, never of
+their values: name, storage (`keychain` service and account, `environment`
+variable, `file` path, or a `reference` Vitals does not check), the URL
+where a key is created or revoked, a note for agents, and when the presence
+check last passed. The menu row shows the counts; the submenu lists the
+entries, opens the file, or re-checks. `vitals keys` prints the same for an
+agent, `vitals keys init` writes an example. A CLAUDE.md line such as "run
+`vitals keys` before asking for a credential" is the whole integration.
+
 ## Install
 
 ```bash

@@ -46,6 +46,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var sessionBurns: [Int32: SessionBurn] = [:]
     private var budgetWarning: BudgetWarning?
     private var burnScanInFlight = false
+    /// API key register: presence only, checked on menu open at most every
+    /// 10 minutes, off the main actor because `security` is a process.
+    private var keyStatuses: [KeyStatus] = []
+    private var keyRegister: KeyRegister?
+    private var keyRegisterError: String?
+    private var keyCheckInFlight = false
+    private var keyCheckedAt: Date?
+    private var keysItem: NSMenuItem?
     private var lastSnapshot: Snapshot?
     private var claudeSnapshot: ClaudeTelemetrySnapshot?
     private var claudeSessions = ClaudeSessionsSnapshot.empty
@@ -116,6 +124,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         menuIsOpen = true
+        refreshKeys(force: false)
         claudeSessions = ClaudeSessionStore.load(home: claudeHome)
         reloadMCP()
         if let snapshot = lastSnapshot {
@@ -451,6 +460,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(viewItem(hint))
         menu.addItem(.separator())
         menu.addItem(clipboardItem())
+        menu.addItem(keysMenuItem())
         menu.addItem(networkToggleItem())
         menu.addItem(awakeMenuItem())
         menu.addItem(launchAtLoginItem())
@@ -511,6 +521,151 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func openClipboard() {
         clipboardPanel.toggle()
+    }
+
+    // MARK: API keys
+
+    private func refreshKeys(force: Bool) {
+        guard !keyCheckInFlight else { return }
+        if !force, let keyCheckedAt, Date().timeIntervalSince(keyCheckedAt) < 600 { return }
+        switch KeyRegisterStore.load() {
+        case let .failure(error):
+            keyRegister = nil
+            keyStatuses = []
+            keyRegisterError = "keys.json unreadable: \(error)"
+            keyCheckedAt = Date()
+            updateKeysItem()
+        case .success(nil):
+            keyRegister = nil
+            keyStatuses = []
+            keyRegisterError = nil
+            keyCheckedAt = Date()
+            updateKeysItem()
+        case let .success(register?):
+            keyRegisterError = nil
+            keyCheckInFlight = true
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            Task { [weak self] in
+                let statuses = await Self.checkKeys(register, home: home)
+                self?.finishKeys(register, statuses: statuses)
+            }
+        }
+    }
+
+    nonisolated private static func checkKeys(_ register: KeyRegister, home: URL) async -> [KeyStatus] {
+        KeyChecks.check(register, home: home)
+    }
+
+    /// Stamps `verifiedAt` on entries that passed, at most once an hour so
+    /// the file does not churn.
+    private func finishKeys(_ register: KeyRegister, statuses: [KeyStatus]) {
+        keyCheckInFlight = false
+        keyCheckedAt = Date()
+        let now = Date()
+        let stale = statuses.contains { status in
+            status.presence == .present && (status.entry.verifiedAt.map { now.timeIntervalSince($0) > 3_600 } ?? true)
+        }
+        var stamped = register
+        if stale {
+            stamped = Keys.stamped(register, statuses: statuses, now: now)
+            try? KeyRegisterStore.save(stamped)
+        }
+        keyRegister = stamped
+        keyStatuses = statuses.map { status in
+            KeyStatus(entry: stamped.keys.first { $0.name == status.entry.name } ?? status.entry, presence: status.presence)
+        }
+        updateKeysItem()
+    }
+
+    private func keysMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "API keys", action: nil, keyEquivalent: "")
+        keysItem = item
+        updateKeysItem()
+        return item
+    }
+
+    private func updateKeysItem() {
+        guard let keysItem else { return }
+        let summary = keyRegisterError ?? (keyRegister == nil ? "no keys.json yet" : Keys.summary(keyStatuses))
+        let title = "API keys · \(summary)"
+        let color: NSColor = keyRegisterError != nil ? Palette.coral
+            : keyStatuses.contains { $0.presence == .missing } ? Palette.amber
+            : Palette.primary
+        keysItem.title = title
+        keysItem.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: color]
+        )
+        keysItem.toolTip = "Where each secret lives and how to reach it. Presence only: values are never read, shown or copied. \(KeyRegisterStore.url().path)"
+        keysItem.submenu = keysSubmenu()
+    }
+
+    private func keysSubmenu() -> NSMenu {
+        let submenu = NSMenu()
+        submenu.appearance = NSAppearance(named: .darkAqua)
+        if keyRegister == nil, keyRegisterError == nil {
+            submenu.addItem(label("No register yet. An entry is a name, where the secret lives"))
+            submenu.addItem(label("(keychain, environment, file or reference), a URL and a note."))
+            let create = NSMenuItem(title: "Create example keys.json", action: #selector(createKeyRegister), keyEquivalent: "")
+            create.target = self
+            submenu.addItem(create)
+        } else {
+            for status in keyStatuses {
+                let entry = status.entry
+                let line = Keys.line(status, now: Date())
+                let row = NSMenuItem(title: line, action: #selector(openKeyURL(_:)), keyEquivalent: "")
+                row.target = self
+                row.representedObject = entry.url
+                row.isEnabled = entry.url != nil
+                let color: NSColor = switch status.presence {
+                case .present: Palette.mint
+                case .missing: Palette.coral
+                case .unchecked: Palette.secondary
+                }
+                row.attributedTitle = NSAttributedString(
+                    string: line,
+                    attributes: [.font: NSFont.systemFont(ofSize: 12.5, weight: .medium), .foregroundColor: color]
+                )
+                row.toolTip = [entry.note, entry.url.map { "Click opens \($0)" }].compactMap { $0 }.joined(separator: "\n")
+                submenu.addItem(row)
+            }
+            if keyStatuses.isEmpty, keyRegisterError == nil {
+                submenu.addItem(label("keys.json has no entries yet."))
+            }
+        }
+        submenu.addItem(.separator())
+        let open = NSMenuItem(title: "Open keys.json", action: #selector(openKeyRegister), keyEquivalent: "")
+        open.target = self
+        submenu.addItem(open)
+        let recheck = NSMenuItem(title: "Re-check now", action: #selector(recheckKeys), keyEquivalent: "")
+        recheck.target = self
+        submenu.addItem(recheck)
+        submenu.addItem(.separator())
+        submenu.addItem(label("Presence only: Keychain metadata via security without -w, env vars from the"))
+        submenu.addItem(label("zsh rc files, files by size. Values are never read, shown or copied."))
+        submenu.addItem(label("Agents: `vitals keys` prints this list, `vitals keys init` writes the example."))
+        return submenu
+    }
+
+    @objc private func createKeyRegister() {
+        try? KeyRegisterStore.save(KeyRegister.example)
+        refreshKeys(force: true)
+    }
+
+    @objc private func openKeyRegister() {
+        if keyRegister == nil, keyRegisterError == nil {
+            try? KeyRegisterStore.save(KeyRegister.example)
+        }
+        NSWorkspace.shared.open(KeyRegisterStore.url())
+    }
+
+    @objc private func recheckKeys() {
+        refreshKeys(force: true)
+    }
+
+    @objc private func openKeyURL(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let url = URL(string: raw) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func networkToggleItem() -> NSMenuItem {

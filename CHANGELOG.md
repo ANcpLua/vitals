@@ -5,6 +5,17 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
 ## Unreleased
 
 ### Added
+- API key register, `~/.config/vitals/keys.json`: one entry per secret
+  with name, where it lives (`keychain` service and account, `environment`
+  variable, `file` path, or a free `reference` such as a 1Password item),
+  the URL where it is created, a note for agents, and `verifiedAt`. One
+  menu row shows "4 registered · 3 present · 1 missing"; its submenu lists
+  the entries (click opens the URL), opens the file, or re-checks. Presence
+  only: Keychain via `security find-generic-password` without `-w` (metadata,
+  never prompts), env vars from the zsh rc files, files by size. Values are
+  never read, shown or copied. `vitals keys` prints the list for agents,
+  `vitals keys init` writes an example register. Verified stamps are written
+  back at most hourly.
 - Claude budget forecast. Every usage poll stores one sample per limit
   row (`~/Library/Application Support/Vitals/usage-samples.json`, 2 h
   kept); the rate over the last 15 minutes gives "empty in" per row, and a
