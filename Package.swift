@@ -14,7 +14,8 @@ let package = Package(
         .target(name: "VitalsMCP", dependencies: ["VitalsClaude"]),
         .executableTarget(
             name: "vitals",
-            dependencies: ["VitalsCore", "VitalsKernel", "VitalsClaude", "VitalsMCP"]
+            dependencies: ["VitalsCore", "VitalsKernel", "VitalsClaude", "VitalsMCP"],
+            linkerSettings: [.linkedFramework("Carbon")]
         ),
         .executableTarget(name: "selftest", dependencies: ["VitalsCore", "VitalsKernel"]),
         .executableTarget(name: "claude-selftest", dependencies: ["VitalsClaude"]),

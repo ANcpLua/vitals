@@ -32,6 +32,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var awakeDecision = AwakeDecision(holdSystem: false, holdDisplay: false, overrideLidSleep: false, reason: "off", warning: false)
     private var awakeItem: NSMenuItem?
     private static let awakeDefaultsKey = "awakeMode"
+    /// Clipboard history: polled here, shown in its own panel so the menu
+    /// only carries one row for it.
+    private let clipboard = ClipboardMonitor()
+    private lazy var clipboardPanel = ClipboardPanel(monitor: clipboard)
+    private var clipboardHotKey: HotKey?
     private var lastSnapshot: Snapshot?
     private var claudeSnapshot: ClaudeTelemetrySnapshot?
     private var claudeSessions = ClaudeSessionsSnapshot.empty
@@ -73,6 +78,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.addItem(quitItem())
         applyAwake(powerContext)
+        clipboard.start()
+        clipboardHotKey = HotKey(keyCode: HotKey.keyV, modifiers: [.control, .shift], id: 1) { [weak self] in
+            self?.clipboardPanel.toggle()
+        }
         refresh()
         refreshClaude()
         Task { [weak self] in
@@ -430,6 +439,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshHintView = hint
         menu.addItem(viewItem(hint))
         menu.addItem(.separator())
+        menu.addItem(clipboardItem())
         menu.addItem(networkToggleItem())
         menu.addItem(awakeMenuItem())
         menu.addItem(launchAtLoginItem())
@@ -468,6 +478,28 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             Printer.err("launch at login: \(error.localizedDescription)")
         }
         if let lastSnapshot, menuIsOpen { render(lastSnapshot) }
+    }
+
+    private func clipboardItem() -> NSMenuItem {
+        let count = clipboard.history.entries.count
+        let hotkey = clipboardHotKey == nil ? "hotkey unavailable" : "⌃⇧V"
+        let title = "Clipboard · \(count) \(count == 1 ? "entry" : "entries") · \(hotkey)"
+            + (clipboard.lastError.map { " · \($0)" } ?? "")
+        let item = NSMenuItem(title: title, action: #selector(openClipboard), keyEquivalent: "")
+        item.target = self
+        item.toolTip = "Text copied anywhere, newest first, 200 kept in ~/Library/Application Support/Vitals/clipboard.json. Secret and transient pasteboard writes are skipped."
+        item.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: clipboard.lastError == nil ? Palette.primary : Palette.coral
+            ]
+        )
+        return item
+    }
+
+    @objc private func openClipboard() {
+        clipboardPanel.toggle()
     }
 
     private func networkToggleItem() -> NSMenuItem {
