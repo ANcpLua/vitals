@@ -1,0 +1,106 @@
+# Changelog — Vitals
+
+Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest entry first.
+
+## Unreleased
+
+### Added
+- MCP SERVERS block. Reads every scope Claude Code merges (`~/.claude.json`
+  user and per-project servers, `<project>/.mcp.json` with its approval
+  state, plugin `.mcp.json` files) for the projects of the live sessions
+  plus home. One row per server with status dot, scope tag and cached tool
+  count. Click copies the server as one line ending in its callable tool
+  names (`mcp__plugin_playwright_playwright__browser_click, …`); COPY ALL
+  copies every server. The submenu offers a ToolSearch `select:` query for
+  the whole server, a per-tool copy, "Probe tools now" (launches the server
+  once with `initialize` → `tools/list`, cached in
+  `~/Library/Caches/dev.ancplua.vitals/mcp-tools.json`), and a per-project
+  enable/disable toggle that edits `disabledMcpServers` /
+  `enabledMcpjsonServers` exactly like `/mcp` does. Running sessions keep
+  their server set; new sessions pick the change up. A one-time backup of
+  `~/.claude.json` is written before the first edit. `vitals mcp [refresh]`
+  is the headless form.
+- "Stay awake" modes: Off, Always, While the lid is closed, While an
+  external display is attached. Holds `PreventUserIdleSystemSleep` and
+  `PreventUserIdleDisplaySleep` and clears the kernel's clamshell-sleep flag
+  through `kPMSetClamshellSleepState` on the `IOPMrootDomain` user client,
+  the three things Clamshell.app does, so a closed lid on battery keeps the
+  external displays on. No root and no daemon: the call is open to any
+  process. The policy is pure over lid state (`AppleClamshellState`), power
+  source and external display count; the lid and display modes arm the flag
+  only while an external display is attached, so a closed lid in a bag still
+  sleeps, and Always arms it regardless. Persisted and re-applied at launch
+  and on every 2 s tick. The flag is shared kernel state and Clamshell.app
+  flips the same bit, so run one of the two. Quitting Vitals or choosing Off
+  clears the flag, which sleeps a closed-lid Mac on battery at once.
+  `vitals awake` prints the facts.
+- Every top-level process row carries a 60 s CPU sparkline (30 samples at
+  the 2 s tick, raw values, not the smoothed number). Rows are ranked by
+  their window peak, so a process that spikes once every 20 s stays put
+  instead of sinking the moment it goes quiet. Exited processes linger
+  dimmed and italic for five samples, showing their peak, then drop out.
+- The sparkline stacks anything above one core as further layers (blue,
+  amber, amber, coral), so a four-core burst fits a 12 pt row without an
+  axis.
+- "Network per process" toggle in the menu, off by default. When on, each
+  tick also runs `nettop -P -L 1 -J bytes_in,bytes_out` (stdin on
+  `/dev/null`) and the menu widens by a NET column with per-interval
+  download/upload rates summed over the process tree. A counter that runs
+  backwards (pid reuse) is dropped for that interval. Kept as a second column
+  rather than a CPU/NET switch so the spike graph never disappears.
+- "Launch at Login" toggle backed by `SMAppService.mainApp`. It is locked
+  with an explanation while `~/Library/LaunchAgents/dev.ancplua.vitals.plist`
+  exists, so the human-plugins LaunchAgent and a login item can never both be
+  registered. State is re-read every time the menu opens.
+- Session rows in the Claude section copy themselves on click; "COPY ALL"
+  in the SESSIONS header copies every session, hidden ones included. One
+  line per session in ListAgents shape plus pid, cwd, full session id and
+  Claude Code version (`ancplua-d6  ·  interactive  ·  busy  ·  pid 64779  ·
+  /Users/ancplua  ·  session 8fda…  ·  Claude Code 2.1.261`). The row flashes
+  for 150 ms as the only confirmation. Copies go through the general
+  pasteboard so clipboard managers record them.
+
+### Added
+- Disk alarm now `launchctl kickstart`s `dev.ancplua.disk-guard` the moment it
+  latches, so cleanup starts immediately instead of at disk-guard's next poll.
+
+### Fixed
+- Claude usage no longer triggers the macOS Keychain dialog. The credential
+  is read through `/usr/bin/security find-generic-password`, the same binary
+  Claude Code writes it with, so it is always on the item's ACL. The previous
+  in-process `SecItemCopyMatching` read depended on "Always Allow", which is
+  bound to one exact ad-hoc-signed build and is dropped whenever Claude Code
+  recreates the item. The binary-fingerprint authorization state in
+  UserDefaults is gone with it. If the Keychain does refuse a read, background
+  polling stops until the user hits Refresh instead of re-prompting.
+- The Refresh row now shows the real age of the last Claude fetch
+  ("Updated 12s ago") and updates live; clicking it refetches in place instead
+  of closing the menu.
+
+### Added
+- Local Claude Code sessions (`~/.claude/sessions/<pid>.json`) are listed in
+  the Claude section: name, working directory, busy/idle, age. Dead pids,
+  stale entries, and cloud sessions are filtered. `CLAUDE_CONFIG_DIR` is
+  honored via the new `ClaudeHome` path resolver.
+- `vitals claude` prints the Claude section headlessly (status, usage rows,
+  local sessions) for health checks and prompt-free verification.
+- Disk headroom now follows macOS's capacity available for important usage,
+  matching Finder for user-facing display, severity, and low-disk alarms.
+- Disk values now use decimal GB labels instead of presenting binary GiB as
+  GB, and the detail view distinguishes available capacity from free space
+  immediately on disk.
+
+### Added
+- The packaged app declares its user-visible disk-space API use in a privacy
+  manifest.
+
+### Removed
+- The duplicate `vitals disk` filesystem walker. GNU `du` remains the
+  canonical manual disk-usage scanner while Vitals retains constant-time disk
+  headroom telemetry.
+
+### Changed
+- Standalone repository again at github.com/ANcpLua/vitals, started with a
+  fresh history. `install.sh` replaces the human-plugins pipeline: it builds
+  the ad-hoc signed `Vitals.app`, copies it to `~/Applications`, writes the
+  `dev.ancplua.vitals` LaunchAgent and restarts it.
