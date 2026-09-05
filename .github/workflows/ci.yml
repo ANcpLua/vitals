@@ -7,7 +7,7 @@ jobs:
   macos:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: plutil -lint Info.plist PrivacyInfo.xcprivacy launchd/dev.ancplua.vitals.plist
       - run: bash pack.sh build
       - run: swift run --scratch-path build/swift -c release selftest
