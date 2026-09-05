@@ -1,4 +1,5 @@
 import Darwin
+import Foundation
 import VitalsCore
 import VitalsKernel
 
@@ -268,4 +269,44 @@ var exitStatus: Int32 = 0
 waitpid(child, &exitStatus, 0)
 argv.forEach { free($0) }
 print("ok    signals: Stop parks a child in SSTOP, Resume releases it")
+
+// Clipboard history: newest first, a repeat moves to the top instead of
+// multiplying, capped at 200, blanks and secret pasteboard writes are never
+// recorded, and the store round-trips as an owner-only file.
+var clip = ClipboardHistory.empty
+for i in 0..<250 { clip = clip.adding("entry \(i)", at: Date(timeIntervalSince1970: Double(i))) }
+guard clip.entries.count == ClipboardHistory.limit, clip.entries.first?.text == "entry 249", clip.entries.last?.text == "entry 50" else {
+    fail("clipboard cap: \(clip.entries.count) entries, first \(clip.entries.first?.text ?? "-")")
+}
+clip = clip.adding("entry 100", at: Date(timeIntervalSince1970: 1_000))
+guard clip.entries.first?.text == "entry 100", clip.entries.filter({ $0.text == "entry 100" }).count == 1,
+      clip.entries.count == ClipboardHistory.limit else {
+    fail("a repeated copy must move to the top, not multiply")
+}
+guard clip.adding("  \n\t", at: Date()) == clip else { fail("blank text must not be recorded") }
+guard clip.filtered("ENTRY 24").count == 10, clip.filtered("ENTRY 24").first?.text == "entry 249",
+      clip.filtered("   ").count == clip.entries.count else {
+    fail("clipboard search must be case-insensitive and keep order")
+}
+guard !ClipboardHistory.records(types: ["public.utf8-plain-text", "org.nspasteboard.ConcealedType"]),
+      !ClipboardHistory.records(types: ["org.nspasteboard.TransientType"]),
+      ClipboardHistory.records(types: ["public.utf8-plain-text", "public.rtf"]) else {
+    fail("concealed and transient pasteboard writes must be skipped")
+}
+guard ClipboardEntry(text: "\n  first  line \n second", capturedAt: Date()).title == "first line" else {
+    fail("entry title must be the first non-blank line, whitespace collapsed")
+}
+let clipURL = URL(fileURLWithPath: NSTemporaryDirectory())
+    .appendingPathComponent("vitals-selftest-\(getpid())/clipboard.json")
+do {
+    try ClipboardStore.save(clip, to: clipURL)
+    let mode = (try FileManager.default.attributesOfItem(atPath: clipURL.path)[.posixPermissions] as? Int) ?? 0
+    guard mode == 0o600 else { fail("clipboard.json must be owner-only, got \(String(mode, radix: 8))") }
+    guard ClipboardStore.load(from: clipURL) == clip else { fail("clipboard store did not round-trip") }
+    try FileManager.default.removeItem(at: clipURL.deletingLastPathComponent())
+} catch {
+    fail("clipboard store: \(error)")
+}
+guard ClipboardStore.load(from: clipURL) == .empty else { fail("a missing clipboard file must load as empty") }
+print("ok    clipboard history: capped, deduped, secrets skipped, owner-only store round-trips")
 print("PASS  memoization verified: nothing re-read")

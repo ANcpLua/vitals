@@ -9,6 +9,14 @@ override Clamshell.app does, without root. Disk headroom follows macOS's
 capacity available for important usage, the value Finder reports, and also
 shows the immediately free capacity.
 
+## Clipboard
+
+⌃⇧V opens a floating panel over the last 200 copied texts: type to filter,
+↑↓ to move, ↩ or click to put an entry back on the pasteboard, then ⌘V
+where you need it. Writes that password managers mark as concealed or
+transient are never recorded. The history lives owner-only in
+`~/Library/Application Support/Vitals/clipboard.json`; Clear empties it.
+
 ## Install
 
 ```bash
