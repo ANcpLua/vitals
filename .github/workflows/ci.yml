@@ -1,0 +1,17 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: plutil -lint Info.plist PrivacyInfo.xcprivacy launchd/dev.ancplua.vitals.plist
+      - run: bash pack.sh build
+      - run: swift run --scratch-path build/swift -c release selftest
+      - run: swift run --scratch-path build/swift -c release claude-selftest
+      - run: swift run --scratch-path build/swift -c release mcp-selftest
+      - run: codesign --verify --deep --strict build/Vitals.app
+      - run: build/Vitals.app/Contents/MacOS/vitals snapshot
