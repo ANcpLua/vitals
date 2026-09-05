@@ -25,8 +25,11 @@ resets in 6d". A limit that runs out before its reset is a warning: the bar
 turns amber (coral under an hour), a notification fires once, a line under
 the usage rows names the session burning most tokens (click it to send that
 session SIGINT, the same interrupt as Esc), and
-`~/.config/vitals/budget-warning.json` is written for agents. Absolute
-tokens per session come from the transcripts under `~/.claude/projects`.
+`~/.config/vitals/budget-warning.json` is written for agents. Per session
+the transcripts under `~/.claude/projects` give calls, context per call and
+output rate for the last 15 minutes, shown as `×10 · 350k ctx`; the heaviest
+session is ranked by price-weighted tokens, since cache reads of a large
+context dwarf everything else.
 
 `install.sh` registers `budget-warning.sh` as a Claude Code PreToolUse hook.
 While a warning is active and fresh it hands the advice to a running agent

@@ -893,7 +893,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             budgetWarning = warning
             try? BudgetWarningStore.save(warning)
             if previous == nil {
-                let who = warning.sessions.first.map { " · \($0.name) \(ClaudeBudget.tokens($0.tokensPerMinute))/min" } ?? ""
+                let who = warning.sessions.first.map { " · \($0.name) \($0.short)" } ?? ""
                 Notifier.deliver(ClaudeAlert(
                     title: "Vitals · Claude budget",
                     message: "\(worst.label) empty in \(warning.emptyIn), resets in \(warning.resetsIn)\(who)"

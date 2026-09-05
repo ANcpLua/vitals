@@ -20,9 +20,13 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
   row (`~/Library/Application Support/Vitals/usage-samples.json`, 2 h
   kept); the rate over the last 15 minutes gives "empty in" per row, and a
   limit that runs out before its reset turns its bar amber, coral under an
-  hour. Tokens per live session come from the session's transcript under
-  `~/.claude/projects` (last 15 minutes, deduplicated by message id, the
-  four usage counters summed) and show on the session row as `240k/min`.
+  hour. Per live session the transcript under `~/.claude/projects` gives the
+  last 15 minutes as calls, context per call, output rate and cache reads
+  (deduplicated by message id). The session row shows `×10 · 350k ctx`:
+  cache reads are two orders of magnitude above everything else because
+  every call re-reads the whole context, so a raw tokens-per-minute figure
+  misleads; the ranking of the heaviest session uses price-weighted tokens
+  (input 1, cache write 1.25, cache read 0.1, output 5).
   While a warning is active: one notification, a line under the usage
   rows naming the heaviest session (click sends it SIGINT, which
   interrupts its turn like Esc), and
