@@ -112,6 +112,42 @@ case "awake":
     Printer.out("context   \(Awake.describe(context)) · lid-close sleeps: \(context.lidClosesSleep)")
     Printer.out("mode      \(mode.rawValue) · \(decision.reason) · lid-close override \(decision.overrideLidSleep ? "wanted" : "not wanted")")
 
+case "budget":
+    // Forecast per limit row from the persisted samples, tokens per live
+    // session from the transcripts, and the warning file. Fetches usage once,
+    // which can meet the endpoint's rate limit; the samples still print.
+    let semaphore = DispatchSemaphore(value: 0)
+    Task.detached {
+        let now = Date()
+        let telemetry = await ClaudeTelemetryClient().fetch()
+        let samples = UsageSampleStore.load()
+        if let message = telemetry.usage.unavailableMessage {
+            Printer.out("usage     \(message)")
+        }
+        for row in telemetry.usage.rows {
+            let forecast = ClaudeBudget.forecast(row: row, samples: samples, now: now)
+            let line = forecast.map { f in
+                String(format: "%.1f%%/h", f.percentPerHour)
+                    + " · empty in \(f.emptyIn.map(ClaudeBudget.duration) ?? "never")"
+                    + " · resets in \(f.resetsIn.map(ClaudeBudget.duration) ?? "unknown")"
+                    + (f.depletesBeforeReset ? " · RUNS OUT BEFORE RESET" : "")
+            } ?? "no forecast yet (needs 4 min of samples, has \(samples.filter { $0.rowID == row.id }.count))"
+            Printer.out("limit     \(row.label.padding(toLength: 22, withPad: " ", startingAt: 0))\(row.detail) · \(line)")
+        }
+        let home = ClaudeHome()
+        for session in ClaudeSessionStore.load(home: home).sessions {
+            let burn = ClaudeTranscripts.burn(for: session, home: home, now: now)
+            Printer.out("session   \(session.name.padding(toLength: 14, withPad: " ", startingAt: 0)) pid \(session.pid)  \(burn.tokens) tokens / 15 min · \(ClaudeBudget.tokens(burn.tokensPerMinute))/min · \(session.abbreviatedCwd())")
+        }
+        if let warning = BudgetWarningStore.load() {
+            Printer.out("warning   \(warning.row) · empty in \(warning.emptyIn) · \(BudgetWarningStore.url().path) · updated \(Format.age(since: warning.updatedAt)) ago")
+        } else {
+            Printer.out("warning   none · \(BudgetWarningStore.url().path) absent")
+        }
+        semaphore.signal()
+    }
+    semaphore.wait()
+
 case "mcp":
     // Headless MCP view: every server Claude Code would see for the live
     // sessions' projects plus home, with cached tool names. `vitals mcp
@@ -145,6 +181,6 @@ case "bar":
     application.run()
 
 default:
-    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | mcp [refresh] | awake | bar]")
+    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | budget | mcp [refresh] | awake | bar]")
     exit(2)
 }

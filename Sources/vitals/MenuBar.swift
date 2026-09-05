@@ -37,6 +37,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let clipboard = ClipboardMonitor()
     private lazy var clipboardPanel = ClipboardPanel(monitor: clipboard)
     private var clipboardHotKey: HotKey?
+    /// Budget: one usage sample per poll and row, forecasts over the last
+    /// 15 minutes, per-session token burn from the transcripts, and the
+    /// warning edge that drives the notification and the hook file.
+    private var usageSamples = UsageSampleStore.load()
+    private var lastSampledAt: Date?
+    private var forecasts: [String: UsageForecast] = [:]
+    private var sessionBurns: [Int32: SessionBurn] = [:]
+    private var budgetWarning: BudgetWarning?
+    private var burnScanInFlight = false
     private var lastSnapshot: Snapshot?
     private var claudeSnapshot: ClaudeTelemetrySnapshot?
     private var claudeSessions = ClaudeSessionsSnapshot.empty
@@ -78,6 +87,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.addItem(quitItem())
         applyAwake(powerContext)
+        BudgetWarningStore.clear()
         clipboard.start()
         clipboardHotKey = HotKey(keyCode: HotKey.keyV, modifiers: [.control, .shift], id: 1) { [weak self] in
             self?.clipboardPanel.toggle()
@@ -407,6 +417,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         if let model = claudeSectionModel() {
             let view = ClaudeSectionView(model: model)
+            view.onInterrupt = { [weak self] pid in self?.interruptSession(pid) }
             claudeView = view
             menu.addItem(viewItem(view))
             menu.addItem(.separator())
@@ -591,7 +602,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return ClaudeSectionModel(
             telemetry: claudeSnapshot,
             sessions: claudeSessions,
-            now: Date()
+            now: Date(),
+            forecasts: forecasts,
+            burns: sessionBurns,
+            warning: budgetWarning
         )
     }
 
@@ -667,12 +681,88 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         for alert in decision.triggered {
             Notifier.deliver(alert)
         }
+        recordSamples(snapshot)
+        evaluateBudget()
         guard menuIsOpen, let lastSnapshot else { return }
         refreshHintView?.setHint(refreshHintText())
         if let claudeView, let model = claudeSectionModel(), claudeView.update(model) {
             return
         }
         render(lastSnapshot)
+    }
+
+    // MARK: Budget
+
+    /// One sample per row and successful poll; a 429 keeps the old capture
+    /// time and records nothing.
+    private func recordSamples(_ snapshot: ClaudeTelemetrySnapshot) {
+        guard snapshot.capturedAt != lastSampledAt, !snapshot.usage.rows.isEmpty else { return }
+        lastSampledAt = snapshot.capturedAt
+        usageSamples += snapshot.usage.rows.map {
+            UsageSample(rowID: $0.id, at: snapshot.capturedAt, utilization: $0.utilization)
+        }
+        usageSamples = ClaudeBudget.pruned(usageSamples, now: snapshot.capturedAt)
+        try? UsageSampleStore.save(usageSamples)
+    }
+
+    /// Forecasts are pure; the transcript scan reads files, so it runs off
+    /// the main actor and reports back through `finishBudget`.
+    private func evaluateBudget() {
+        guard let claudeSnapshot else { return }
+        let now = Date()
+        forecasts = Dictionary(uniqueKeysWithValues: claudeSnapshot.usage.rows.compactMap { row in
+            ClaudeBudget.forecast(row: row, samples: usageSamples, now: now).map { (row.id, $0) }
+        })
+        claudeSessions = ClaudeSessionStore.load(home: claudeHome)
+        guard !burnScanInFlight else { return }
+        burnScanInFlight = true
+        let sessions = claudeSessions.sessions
+        let root = claudeHome.root
+        Task { [weak self] in
+            let burns = await Self.scanBurns(sessions, root: root, now: now)
+            self?.finishBudget(burns)
+        }
+    }
+
+    nonisolated private static func scanBurns(_ sessions: [ClaudeSession], root: URL, now: Date) async -> [SessionBurn] {
+        let home = ClaudeHome(root: root)
+        return sessions.map { ClaudeTranscripts.burn(for: $0, home: home, now: now) }
+    }
+
+    private func finishBudget(_ burns: [SessionBurn]) {
+        burnScanInFlight = false
+        sessionBurns = Dictionary(uniqueKeysWithValues: burns.map { ($0.pid, $0) })
+        let previous = budgetWarning
+        if let worst = ClaudeBudget.worst(Array(forecasts.values)) {
+            let warning = BudgetWarning.make(worst, sessions: burns, now: Date())
+            budgetWarning = warning
+            try? BudgetWarningStore.save(warning)
+            if previous == nil {
+                let who = warning.sessions.first.map { " · \($0.name) \(ClaudeBudget.tokens($0.tokensPerMinute))/min" } ?? ""
+                Notifier.deliver(ClaudeAlert(
+                    title: "Vitals · Claude budget",
+                    message: "\(worst.label) empty in \(warning.emptyIn), resets in \(warning.resetsIn)\(who)"
+                ))
+            }
+        } else {
+            budgetWarning = nil
+            if previous != nil { BudgetWarningStore.clear() }
+        }
+        guard menuIsOpen else { return }
+        if let claudeView, let model = claudeSectionModel(), claudeView.update(model) { return }
+        if let lastSnapshot { render(lastSnapshot) }
+    }
+
+    /// SIGINT interrupts the session's current turn the way Esc does; the
+    /// process stays and `claude --resume` brings the conversation back.
+    private func interruptSession(_ pid: Int32) {
+        let name = claudeSessions.sessions.first { $0.pid == pid }?.name ?? "pid \(pid)"
+        switch Signals.send(Signals.interrupt, to: pid) {
+        case .success:
+            Notifier.deliver(ClaudeAlert(title: "Vitals · Claude budget", message: "SIGINT sent to \(name)"))
+        case let .failure(error):
+            Notifier.deliver(ClaudeAlert(title: "Vitals · Claude budget", message: "SIGINT to \(name) failed: \(error)"))
+        }
     }
 
     private func updateTitle(_ snapshot: Snapshot) {

@@ -17,6 +17,22 @@ where you need it. Writes that password managers mark as concealed or
 transient are never recorded. The history lives owner-only in
 `~/Library/Application Support/Vitals/clipboard.json`; Clear empties it.
 
+## Claude budget
+
+The usage endpoint reports percentages only, so Vitals samples them once a
+minute and forecasts each limit from the last 15 minutes: "empty in 3h 20m,
+resets in 6d". A limit that runs out before its reset is a warning: the bar
+turns amber (coral under an hour), a notification fires once, a line under
+the usage rows names the session burning most tokens (click it to send that
+session SIGINT, the same interrupt as Esc), and
+`~/.config/vitals/budget-warning.json` is written for agents. Absolute
+tokens per session come from the transcripts under `~/.claude/projects`.
+
+`install.sh` registers `budget-warning.sh` as a Claude Code PreToolUse hook.
+While a warning is active and fresh it hands the advice to a running agent
+as additional context, once per session per 10 minutes; it always exits 0
+and cannot block a tool call. `vitals budget` prints the same picture.
+
 ## Install
 
 ```bash

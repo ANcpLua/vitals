@@ -34,19 +34,22 @@ public struct ClaudeUsageRow: Sendable, Equatable {
     public let fraction: Double
     public let detail: String
     public let utilization: Double
+    public let resetsAt: Date?
 
     public init(
         id: String,
         label: String,
         fraction: Double,
         detail: String,
-        utilization: Double
+        utilization: Double,
+        resetsAt: Date? = nil
     ) {
         self.id = id
         self.label = label
         self.fraction = fraction
         self.detail = detail
         self.utilization = utilization
+        self.resetsAt = resetsAt
     }
 }
 
@@ -108,6 +111,11 @@ public struct ClaudeTelemetrySnapshot: Sendable, Equatable {
 public struct ClaudeAlert: Sendable, Equatable {
     public let title: String
     public let message: String
+
+    public init(title: String, message: String) {
+        self.title = title
+        self.message = message
+    }
 }
 
 public struct ClaudeAlertState: Sendable, Equatable {
@@ -356,7 +364,8 @@ public enum ClaudeUsageParser {
         let utilization = max(0, limit.percent)
         let fraction = min(utilization / 100, 1)
         var detail = String(format: "%.0f%%", utilization)
-        if let reset = parseDate(limit.resetsAt) {
+        let reset = parseDate(limit.resetsAt)
+        if let reset {
             detail += " · resets \(relativeReset(reset, now: now))"
         }
 
@@ -367,7 +376,8 @@ public enum ClaudeUsageParser {
                 label: label,
                 fraction: fraction,
                 detail: detail,
-                utilization: utilization
+                utilization: utilization,
+                resetsAt: reset
             )
         )
     }
