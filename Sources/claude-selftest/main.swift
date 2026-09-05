@@ -316,6 +316,17 @@ do {
     failures.append("selftest threw: \(error)")
 }
 
+// A 429 (or any transient failure) keeps the last rows and their age; a
+// fresh reading replaces them; access denial replaces them too.
+let good = snapshot(utilization: 42)
+let limited = ClaudeTelemetrySnapshot(health: good.health, usage: .unavailable("HTTP 429"), capturedAt: Date())
+let kept = limited.keepingUsage(from: good)
+expect(kept.usage == good.usage && kept.capturedAt == good.capturedAt, "429 must keep the previous rows and their capture time")
+expect(limited.keepingUsage(from: nil) == limited, "no previous reading: the failure stands")
+expect(snapshot(utilization: 50).keepingUsage(from: good).usage.rows.first?.utilization == 50, "a fresh reading must replace the old rows")
+let denied = ClaudeTelemetrySnapshot(health: good.health, usage: .accessDenied, capturedAt: Date())
+expect(denied.keepingUsage(from: good).usage.isAccessDenied, "access denial must not be papered over with old rows")
+
 if failures.isEmpty {
     print("claude selftest: ok")
     exit(0)
