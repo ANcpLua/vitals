@@ -624,7 +624,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 self.claudeUsageSuspended = true
             }
             self.claudeRefreshInFlight = false
-            self.applyClaude(snapshot)
+            self.applyClaude(snapshot.keepingUsage(from: self.claudeSnapshot))
         }
     }
 

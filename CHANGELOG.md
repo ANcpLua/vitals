@@ -99,6 +99,12 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
   canonical manual disk-usage scanner while Vitals retains constant-time disk
   headroom telemetry.
 
+### Fixed
+- Claude usage no longer flips to "unavailable" between polls. The usage
+  endpoint answers HTTP 429 when polled more than about once a minute, and
+  Claude Code polls it too; a failed poll now keeps the last reading and its
+  capture time, and a 429 is named as such in `vitals claude`.
+
 ### Changed
 - Standalone repository again at github.com/ANcpLua/vitals, started with a
   fresh history. `install.sh` replaces the human-plugins pipeline: it builds

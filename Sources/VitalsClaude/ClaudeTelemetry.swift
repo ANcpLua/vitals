@@ -92,6 +92,17 @@ public struct ClaudeTelemetrySnapshot: Sendable, Equatable {
         self.usage = usage
         self.capturedAt = capturedAt
     }
+
+    /// A failed usage poll must not erase the last reading. The usage
+    /// endpoint answers 429 as soon as it is polled more than about once a
+    /// minute, and Claude Code polls it too, so collisions are routine. Keep
+    /// the previous rows and their capture time (the menu's "Updated" hint
+    /// then shows the real age) and take the fresh health. Access denial
+    /// replaces the rows: that needs the user, not the next tick.
+    public func keepingUsage(from previous: ClaudeTelemetrySnapshot?) -> ClaudeTelemetrySnapshot {
+        guard case .unavailable = usage, let previous, !previous.usage.rows.isEmpty else { return self }
+        return ClaudeTelemetrySnapshot(health: health, usage: previous.usage, capturedAt: previous.capturedAt)
+    }
 }
 
 public struct ClaudeAlert: Sendable, Equatable {
@@ -523,7 +534,11 @@ public enum ClaudeTelemetryError: Error, Equatable {
             "Claude Keychain access unavailable"
         case .invalidCredential:
             "Claude Code sign-in is unavailable"
-        case .invalidResponse, .httpStatus:
+        case .httpStatus(429):
+            "Claude usage rate-limited (HTTP 429) · retries every minute"
+        case let .httpStatus(code):
+            "Claude usage is unavailable (HTTP \(code))"
+        case .invalidResponse:
             "Claude usage is unavailable"
         }
     }
