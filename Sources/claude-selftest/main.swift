@@ -327,6 +327,70 @@ expect(snapshot(utilization: 50).keepingUsage(from: good).usage.rows.first?.util
 let denied = ClaudeTelemetrySnapshot(health: good.health, usage: .accessDenied, capturedAt: Date())
 expect(denied.keepingUsage(from: good).usage.isAccessDenied, "access denial must not be papered over with old rows")
 
+// Budget: the rate comes from the oldest and newest sample inside the
+// 15-minute window, needs four minutes of span, drops everything before a
+// reset, and only a limit that runs out before its reset is a warning.
+let budgetNow = Date(timeIntervalSince1970: 1_800_000_000)
+let weekly = ClaudeUsageRow(id: "weekly_all", label: "Weekly · all models", fraction: 0.2, detail: "20%", utilization: 20, resetsAt: budgetNow.addingTimeInterval(6 * 86_400))
+var budgetSamples: [UsageSample] = []
+for minute in stride(from: 10, through: 0, by: -1) {
+    budgetSamples.append(UsageSample(rowID: "weekly_all", at: budgetNow.addingTimeInterval(Double(-minute) * 60), utilization: 20 - Double(minute)))
+}
+let rising = ClaudeBudget.forecast(row: weekly, samples: budgetSamples, now: budgetNow)
+expect(rising.map { abs($0.percentPerHour - 60) < 0.01 } == true, "10 points in 10 minutes must be 60 %/h, got \(String(describing: rising?.percentPerHour))")
+expect(rising.map { abs(($0.emptyIn ?? 0) - 80 * 60) < 1 } == true, "80 % left at 60 %/h must be empty in 80 minutes")
+expect(rising?.depletesBeforeReset == true, "empty in 80 minutes with a reset in 6 days must warn")
+expect(rising?.critical == false, "80 minutes is amber, not coral")
+expect(ClaudeBudget.forecast(row: weekly, samples: Array(budgetSamples.suffix(3)), now: budgetNow) == nil, "two minutes of samples must not forecast")
+let flat = budgetSamples.map { UsageSample(rowID: $0.rowID, at: $0.at, utilization: 20) }
+expect(ClaudeBudget.forecast(row: weekly, samples: flat, now: budgetNow)?.emptyIn == nil, "a flat line never runs out")
+var withReset = budgetSamples
+withReset[5] = UsageSample(rowID: "weekly_all", at: withReset[5].at, utilization: 1)
+for i in 6..<withReset.count { withReset[i] = UsageSample(rowID: "weekly_all", at: withReset[i].at, utilization: Double(i - 4)) }
+let afterReset = ClaudeBudget.forecast(row: weekly, samples: withReset, now: budgetNow)
+expect(afterReset.map { abs($0.percentPerHour - 60) < 0.01 } == true, "samples before a reset must be discarded, got \(String(describing: afterReset?.percentPerHour))")
+let soonReset = ClaudeUsageRow(id: "session", label: "5-hour limit", fraction: 0.2, detail: "20%", utilization: 20, resetsAt: budgetNow.addingTimeInterval(30 * 60))
+let sessionSamples = budgetSamples.map { UsageSample(rowID: "session", at: $0.at, utilization: $0.utilization) }
+let resetFirst = ClaudeBudget.forecast(row: soonReset, samples: sessionSamples, now: budgetNow)
+expect(resetFirst?.depletesBeforeReset == false, "a limit that resets before it runs out is not a warning")
+expect(ClaudeBudget.worst([rising!, resetFirst!])?.rowID == "weekly_all", "worst picks the row that runs out before its reset")
+expect(ClaudeBudget.duration(80 * 60) == "1h 20m" && ClaudeBudget.duration(6 * 86_400 + 3_600) == "6d 1h" && ClaudeBudget.duration(30) == "1m", "duration formatting")
+expect(ClaudeBudget.tokens(240_000) == "240k" && ClaudeBudget.tokens(1_260_000) == "1.3M" && ClaudeBudget.tokens(850) == "850", "token formatting")
+expect(ClaudeTranscripts.slug("/Users/ancplua/repo-playground/vitals") == "-Users-ancplua-repo-playground-vitals", "project slug")
+
+// Transcripts: assistant lines inside the window count once per message id
+// even when streaming wrote several lines; older lines and user lines do not.
+func line(_ type: String, id: String, at: Date, tokens: Int) -> String {
+    let stamp = ISO8601DateFormatter()
+    stamp.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return "{\"type\":\"\(type)\",\"timestamp\":\"\(stamp.string(from: at))\",\"message\":{\"id\":\"\(id)\",\"usage\":{\"input_tokens\":\(tokens),\"output_tokens\":1,\"cache_creation_input_tokens\":2,\"cache_read_input_tokens\":3}}}"
+}
+let transcript = [
+    line("assistant", id: "m1", at: budgetNow.addingTimeInterval(-60), tokens: 100),
+    line("assistant", id: "m1", at: budgetNow.addingTimeInterval(-60), tokens: 100),
+    line("assistant", id: "m2", at: budgetNow.addingTimeInterval(-3_600), tokens: 5_000),
+    line("user", id: "u1", at: budgetNow.addingTimeInterval(-30), tokens: 999),
+    "not json at all",
+    line("assistant", id: "m3", at: budgetNow.addingTimeInterval(-120), tokens: 10)
+].joined(separator: "\n")
+expect(ClaudeTranscripts.tokens(in: transcript, since: budgetNow.addingTimeInterval(-900)) == 106 + 16, "transcript tokens must dedupe by message id and honor the window, got \(ClaudeTranscripts.tokens(in: transcript, since: budgetNow.addingTimeInterval(-900)))")
+
+// Warning file round-trips and carries the advice the hook hands over.
+let burn = SessionBurn(pid: 4242, name: "ancplua-a4", cwd: "/Users/ancplua/x", tokens: 3_600_000, tokensPerMinute: 240_000)
+let warning = BudgetWarning.make(rising!, sessions: [burn], now: budgetNow)
+expect(warning.active && warning.emptyIn == "1h 20m" && warning.resetsIn == "6d" && warning.sessions.first?.pid == 4242, "warning fields: \(warning.emptyIn) \(warning.resetsIn)")
+expect(warning.advice.contains("ancplua-a4 (pid 4242") && warning.advice.contains("240k tokens/min"), "advice names the heaviest session")
+let warningURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("vitals-claude-selftest-\(getpid())/budget-warning.json")
+do {
+    try BudgetWarningStore.save(warning, to: warningURL)
+    expect(BudgetWarningStore.load(from: warningURL) == warning, "warning file must round-trip")
+    BudgetWarningStore.clear(at: warningURL)
+    expect(BudgetWarningStore.load(from: warningURL) == nil, "clear must remove the warning file")
+    try? FileManager.default.removeItem(at: warningURL.deletingLastPathComponent())
+} catch {
+    expect(false, "warning store: \(error)")
+}
+
 if failures.isEmpty {
     print("claude selftest: ok")
     exit(0)

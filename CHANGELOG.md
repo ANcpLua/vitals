@@ -5,6 +5,21 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
 ## Unreleased
 
 ### Added
+- Claude budget forecast. Every usage poll stores one sample per limit
+  row (`~/Library/Application Support/Vitals/usage-samples.json`, 2 h
+  kept); the rate over the last 15 minutes gives "empty in" per row, and a
+  limit that runs out before its reset turns its bar amber, coral under an
+  hour. Tokens per live session come from the session's transcript under
+  `~/.claude/projects` (last 15 minutes, deduplicated by message id, the
+  four usage counters summed) and show on the session row as `240k/min`.
+  While a warning is active: one notification, a line under the usage
+  rows naming the heaviest session (click sends it SIGINT, which
+  interrupts its turn like Esc), and
+  `~/.config/vitals/budget-warning.json` for agents. `install.sh`
+  registers `budget-warning.sh` from the bundle as a Claude Code
+  PreToolUse hook: it hands the warning to a running agent as context at
+  most once per session per 10 minutes, always exits 0, never blocks.
+  `vitals budget` prints forecasts, per-session burn and the warning.
 - Clipboard history in its own floating panel, toggled with ⌃⇧V (Carbon
   hotkey, no Accessibility permission) or from one menu row. Text only:
   the general pasteboard is polled every 0.5 s, writes marked
