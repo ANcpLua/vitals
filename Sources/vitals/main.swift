@@ -171,7 +171,7 @@ case "budget":
         let home = ClaudeHome()
         for session in ClaudeSessionStore.load(home: home).sessions {
             let burn = ClaudeTranscripts.burn(for: session, home: home, now: now)
-            Printer.out("session   \(session.name.padding(toLength: 14, withPad: " ", startingAt: 0)) pid \(session.pid)  \(burn.tokens) tokens / 15 min · \(ClaudeBudget.tokens(burn.tokensPerMinute))/min · \(session.abbreviatedCwd())")
+            Printer.out("session   \(session.name.padding(toLength: 14, withPad: " ", startingAt: 0)) pid \(session.pid)  \(burn.long) · \(session.abbreviatedCwd())")
         }
         if let warning = BudgetWarningStore.load() {
             Printer.out("warning   \(warning.row) · empty in \(warning.emptyIn) · \(BudgetWarningStore.url().path) · updated \(Format.age(since: warning.updatedAt)) ago")

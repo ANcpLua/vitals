@@ -18,7 +18,7 @@ struct ClaudeSectionModel: Equatable {
     /// One line under the usage rows: what runs out, when, who burns most.
     var warningText: String? {
         guard let warning, !telemetry.usage.rows.isEmpty else { return nil }
-        let who = warning.sessions.first.map { " · \($0.name) \(ClaudeBudget.tokens($0.tokensPerMinute))/min · click to interrupt" } ?? ""
+        let who = warning.sessions.first.map { " · \($0.name) \($0.short) · click to interrupt" } ?? ""
         return "⚠ \(warning.row) empty in \(warning.emptyIn), resets in \(warning.resetsIn)\(who)"
     }
 
@@ -308,12 +308,12 @@ final class ClaudeSessionRowView: NSView {
         dot.layer?.backgroundColor = color.cgColor
         nameLabel.stringValue = session.name
         cwdLabel.stringValue = session.abbreviatedCwd()
-        let rate = burn.map { $0.tokens > 0 ? " · \(ClaudeBudget.tokens($0.tokensPerMinute))/min" : "" } ?? ""
+        let rate = burn.map { $0.counts.calls > 0 ? " · \($0.short)" : "" } ?? ""
         ageLabel.stringValue = "\(session.status.rawValue) · \(Format.age(since: session.startedAt, now: now))\(rate)"
         ageLabel.textColor = session.status == .busy ? Palette.blue : Palette.secondary
         toolTip = "pid \(session.pid) · \(session.cwd)\nsession \(session.sessionId)"
             + (session.version.map { "\nClaude Code \($0)" } ?? "")
-            + (burn.map { "\n\($0.tokens) tokens in the last 15 min (input, output, cache write, cache read)" } ?? "")
+            + (burn.map { "\n\($0.long)" } ?? "")
             + "\nClick to copy this line"
         needsLayout = true
     }

@@ -373,13 +373,17 @@ let transcript = [
     "not json at all",
     line("assistant", id: "m3", at: budgetNow.addingTimeInterval(-120), tokens: 10)
 ].joined(separator: "\n")
-expect(ClaudeTranscripts.tokens(in: transcript, since: budgetNow.addingTimeInterval(-900)) == 106 + 16, "transcript tokens must dedupe by message id and honor the window, got \(ClaudeTranscripts.tokens(in: transcript, since: budgetNow.addingTimeInterval(-900)))")
+let counted = ClaudeTranscripts.counts(in: transcript, since: budgetNow.addingTimeInterval(-900))
+expect(counted.calls == 2 && counted.input == 110 && counted.output == 2 && counted.cacheWrite == 4 && counted.cacheRead == 6,
+       "transcript counts must dedupe by message id and honor the window, got \(counted)")
+expect(counted.total == 122 && counted.context == 60 && abs(counted.weighted - (110 + 5 + 0.6 + 10)) < 0.01, "totals, context and price weighting")
 
 // Warning file round-trips and carries the advice the hook hands over.
-let burn = SessionBurn(pid: 4242, name: "ancplua-a4", cwd: "/Users/ancplua/x", tokens: 3_600_000, tokensPerMinute: 240_000)
+let burn = SessionBurn(pid: 4242, name: "ancplua-a4", cwd: "/Users/ancplua/x", counts: TokenCounts(calls: 10, input: 320, output: 16_976, cacheWrite: 20_621, cacheRead: 3_542_066), minutes: 15)
+expect(burn.short == "×10 · 356k ctx" && abs(burn.outputPerMinute - 1_131.7) < 0.1 && abs(burn.tokensPerMinute - 238_665.5) < 0.1, "burn presentation: \(burn.short) \(burn.outputPerMinute)")
 let warning = BudgetWarning.make(rising!, sessions: [burn], now: budgetNow)
 expect(warning.active && warning.emptyIn == "1h 20m" && warning.resetsIn == "6d" && warning.sessions.first?.pid == 4242, "warning fields: \(warning.emptyIn) \(warning.resetsIn)")
-expect(warning.advice.contains("ancplua-a4 (pid 4242") && warning.advice.contains("240k tokens/min"), "advice names the heaviest session")
+expect(warning.advice.contains("ancplua-a4 (pid 4242") && warning.advice.contains("10 calls in 15 min, 356k context each"), "advice names the heaviest session: \(warning.advice)")
 let warningURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("vitals-claude-selftest-\(getpid())/budget-warning.json")
 do {
     try BudgetWarningStore.save(warning, to: warningURL)

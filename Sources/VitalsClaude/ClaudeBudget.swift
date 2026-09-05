@@ -129,22 +129,70 @@ public enum UsageSampleStore {
 
 // MARK: - Per-session token burn from the local transcripts
 
-/// Tokens one live session consumed inside the window, from its transcript
+/// The four usage counters over a window plus the number of API calls.
+/// Cache reads dominate by two orders of magnitude, because every call
+/// re-reads the whole context, so the raw sum says little; `weighted`
+/// applies the price ratios (input 1, cache write 1.25, cache read 0.1,
+/// output 5) and `context` is what each call carried.
+public struct TokenCounts: Codable, Equatable, Sendable {
+    public var calls = 0
+    public var input = 0
+    public var output = 0
+    public var cacheWrite = 0
+    public var cacheRead = 0
+
+    public init(calls: Int = 0, input: Int = 0, output: Int = 0, cacheWrite: Int = 0, cacheRead: Int = 0) {
+        self.calls = calls
+        self.input = input
+        self.output = output
+        self.cacheWrite = cacheWrite
+        self.cacheRead = cacheRead
+    }
+
+    public var total: Int { input + output + cacheWrite + cacheRead }
+    public var weighted: Double { Double(input) + 1.25 * Double(cacheWrite) + 0.1 * Double(cacheRead) + 5 * Double(output) }
+    /// Average tokens a call carried in: the size of the conversation.
+    public var context: Int { calls == 0 ? 0 : (input + cacheWrite + cacheRead) / calls }
+
+    public static func + (lhs: TokenCounts, rhs: TokenCounts) -> TokenCounts {
+        TokenCounts(calls: lhs.calls + rhs.calls, input: lhs.input + rhs.input, output: lhs.output + rhs.output,
+                    cacheWrite: lhs.cacheWrite + rhs.cacheWrite, cacheRead: lhs.cacheRead + rhs.cacheRead)
+    }
+}
+
+/// What one live session burned inside the window, from its transcript
 /// under `~/.claude/projects`. Absolute numbers: the usage endpoint only
 /// reports percentages.
 public struct SessionBurn: Codable, Equatable, Sendable {
     public let pid: Int32
     public let name: String
     public let cwd: String
-    public let tokens: Int
-    public let tokensPerMinute: Double
+    public let counts: TokenCounts
+    public let minutes: Double
 
-    public init(pid: Int32, name: String, cwd: String, tokens: Int, tokensPerMinute: Double) {
+    public init(pid: Int32, name: String, cwd: String, counts: TokenCounts, minutes: Double) {
         self.pid = pid
         self.name = name
         self.cwd = cwd
-        self.tokens = tokens
-        self.tokensPerMinute = tokensPerMinute
+        self.counts = counts
+        self.minutes = minutes
+    }
+
+    public var tokens: Int { counts.total }
+    public var tokensPerMinute: Double { Double(counts.total) / minutes }
+    public var outputPerMinute: Double { Double(counts.output) / minutes }
+    public var weightedPerMinute: Double { counts.weighted / minutes }
+
+    /// "×10 · 350k ctx": calls in the window and the context each carried.
+    public var short: String {
+        counts.calls == 0 ? "idle" : "×\(counts.calls) · \(ClaudeBudget.tokens(Double(counts.context))) ctx"
+    }
+
+    public var long: String {
+        counts.calls == 0 ? "no calls in the last \(Int(minutes)) min" :
+            "\(counts.calls) calls in \(Int(minutes)) min, \(ClaudeBudget.tokens(Double(counts.context))) context each, "
+            + "\(ClaudeBudget.tokens(outputPerMinute)) output/min, \(ClaudeBudget.tokens(Double(counts.cacheRead) / minutes)) cache read/min, "
+            + "weighted \(ClaudeBudget.tokens(weightedPerMinute))/min"
     }
 }
 
@@ -169,12 +217,12 @@ public enum ClaudeTranscripts {
         return urls.filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 
-    /// Sums the four usage counters of every assistant line at or after
-    /// `since`. Streaming writes one line per content block with the same
-    /// usage, so lines are deduplicated by message id first.
-    public static func tokens(in text: String, since: Date) -> Int {
-        var seen: Set<String> = []
-        var total = 0
+    /// Counts every assistant line at or after `since`, one call per message
+    /// id: streaming writes one line per content block, all carrying the
+    /// message's usage, and the last line carries the final numbers.
+    public static func counts(in text: String, since: Date) -> TokenCounts {
+        var perMessage: [String: TokenCounts] = [:]
+        var order: [String] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             guard line.contains("\"usage\""),
                   let data = line.data(using: .utf8),
@@ -186,18 +234,22 @@ public enum ClaudeTranscripts {
                   let usage = message["usage"] as? [String: Any]
             else { continue }
             let key = (message["id"] as? String) ?? (object["requestId"] as? String) ?? (object["uuid"] as? String) ?? stamp
-            guard seen.insert(key).inserted else { continue }
-            for counter in ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"] {
-                total += (usage[counter] as? Int) ?? 0
-            }
+            if perMessage[key] == nil { order.append(key) }
+            perMessage[key] = TokenCounts(
+                calls: 1,
+                input: (usage["input_tokens"] as? Int) ?? 0,
+                output: (usage["output_tokens"] as? Int) ?? 0,
+                cacheWrite: (usage["cache_creation_input_tokens"] as? Int) ?? 0,
+                cacheRead: (usage["cache_read_input_tokens"] as? Int) ?? 0
+            )
         }
-        return total
+        return order.reduce(TokenCounts()) { $0 + perMessage[$1]! }
     }
 
     /// Reads only the tail of each file: a day of agent work is megabytes,
     /// the last 15 minutes fit in the last megabyte.
-    public static func tokens(at urls: [URL], since: Date, tailBytes: Int = 1 << 20) -> Int {
-        var total = 0
+    public static func counts(at urls: [URL], since: Date, tailBytes: Int = 1 << 20) -> TokenCounts {
+        var total = TokenCounts()
         for url in urls {
             guard let handle = try? FileHandle(forReadingFrom: url) else { continue }
             defer { try? handle.close() }
@@ -208,17 +260,17 @@ public enum ClaudeTranscripts {
             if start > 0, let newline = text.firstIndex(of: "\n") {
                 text = String(text[text.index(after: newline)...])
             }
-            total += tokens(in: text, since: since)
+            total = total + counts(in: text, since: since)
         }
         return total
     }
 
     public static func burn(for session: ClaudeSession, home: ClaudeHome, now: Date, window: TimeInterval = ClaudeBudget.window) -> SessionBurn {
         let since = now.addingTimeInterval(-window)
-        let tokens = tokens(at: transcriptURLs(for: session, home: home), since: since)
         return SessionBurn(
             pid: session.pid, name: session.name, cwd: session.cwd,
-            tokens: tokens, tokensPerMinute: Double(tokens) / (window / 60)
+            counts: counts(at: transcriptURLs(for: session, home: home), since: since),
+            minutes: window / 60
         )
     }
 
@@ -255,13 +307,14 @@ public struct BudgetWarning: Codable, Equatable, Sendable {
     public static func make(_ forecast: UsageForecast, sessions: [SessionBurn], now: Date) -> BudgetWarning {
         let emptyIn = forecast.emptyIn.map(ClaudeBudget.duration) ?? "never"
         let resetsIn = forecast.resetsIn.map(ClaudeBudget.duration) ?? "unknown"
-        let heaviest = sessions.sorted { $0.tokensPerMinute > $1.tokensPerMinute }.prefix(3)
-        let burners = heaviest.isEmpty ? "no live session attributed" : heaviest
-            .map { "\($0.name) (pid \($0.pid), \($0.cwd)) at \(ClaudeBudget.tokens($0.tokensPerMinute)) tokens/min" }
+        let heaviest = sessions.filter { $0.counts.calls > 0 }.sorted { $0.weightedPerMinute > $1.weightedPerMinute }.prefix(3)
+        let burners = heaviest.isEmpty ? "no live session made a call in the window" : heaviest
+            .map { "\($0.name) (pid \($0.pid), \($0.cwd)): \($0.long)" }
             .joined(separator: "; ")
         let advice = "Vitals budget warning: \(forecast.label) is at \(Int(forecast.utilization.rounded()))% and burning "
             + String(format: "%.1f", forecast.percentPerHour) + "%/h; at this rate it is empty in \(emptyIn), it resets in \(resetsIn). "
-            + "Heaviest sessions: \(burners). Cut consumption now: use smaller models for subagents (opus or sonnet instead of fable), "
+            + "Heaviest sessions: \(burners). Every call re-reads the whole context, so a large context is the usual cause: "
+            + "compact or start a fresh session for the next task, use smaller models for subagents (opus or sonnet instead of fable), "
             + "avoid re-reading large files, disable MCP servers and plugins you are not using, or stop and let the user decide. "
             + "Advisory only; the user may choose to ignore it."
         return BudgetWarning(
