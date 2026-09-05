@@ -309,4 +309,59 @@ do {
 }
 guard ClipboardStore.load(from: clipURL) == .empty else { fail("a missing clipboard file must load as empty") }
 print("ok    clipboard history: capped, deduped, secrets skipped, owner-only store round-trips")
+
+// Key register: flat JSON round-trips, presence is checked without ever
+// reading a value, and only entries that passed get a verifiedAt stamp.
+let keysNow = Date(timeIntervalSince1970: 1_800_000_000)
+let keysDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("vitals-selftest-keys-\(getpid())")
+let keysURL = keysDir.appendingPathComponent("keys.json")
+do {
+    try KeyRegisterStore.save(KeyRegister.example, to: keysURL)
+    let mode = (try FileManager.default.attributesOfItem(atPath: keysURL.path)[.posixPermissions] as? Int) ?? 0
+    guard mode == 0o600 else { fail("keys.json must be owner-only, got \(String(mode, radix: 8))") }
+    guard case let .success(loaded?) = KeyRegisterStore.load(from: keysURL), loaded == KeyRegister.example else {
+        fail("keys.json did not round-trip")
+    }
+    let raw = try String(contentsOf: keysURL, encoding: .utf8)
+    guard raw.contains("\"kind\" : \"keychain\""), raw.contains("\"service\" : \"Claude Code-credentials\"") else {
+        fail("keys.json must use the flat kind/service format")
+    }
+    try "not json".write(to: keysURL, atomically: true, encoding: .utf8)
+    guard case .failure = KeyRegisterStore.load(from: keysURL) else { fail("a corrupt keys.json must be an error, not empty") }
+    guard case .success(nil) = KeyRegisterStore.load(from: keysDir.appendingPathComponent("absent.json")) else {
+        fail("an absent keys.json must load as nil")
+    }
+    let secret = keysDir.appendingPathComponent("token")
+    try "x".write(to: secret, atomically: true, encoding: .utf8)
+    guard KeyChecks.presence(of: .file(path: secret.path), home: keysDir) == .present,
+          KeyChecks.presence(of: .file(path: keysDir.appendingPathComponent("nope").path), home: keysDir) == .missing else {
+        fail("file presence follows the file")
+    }
+    try FileManager.default.removeItem(at: keysDir)
+} catch {
+    fail("key register store: \(error)")
+}
+guard KeyChecks.presence(of: .keychain(service: "vitals-selftest-does-not-exist", account: nil), home: keysDir) == .missing else {
+    fail("a Keychain item that does not exist must be missing")
+}
+guard KeyChecks.presence(of: .environment(variable: "VITALS_SELFTEST_KEY"), home: keysDir, environment: ["VITALS_SELFTEST_KEY": "set"]) == .present,
+      KeyChecks.presence(of: .environment(variable: "VITALS_SELFTEST_KEY"), home: keysDir, environment: [:]) == .missing,
+      KeyChecks.presence(of: .reference("op://vault/item"), home: keysDir) == .unchecked else {
+    fail("environment and reference presence")
+}
+let keyStatuses = [
+    KeyStatus(entry: KeyRegister.example.keys[0], presence: .present),
+    KeyStatus(entry: KeyRegister.example.keys[1], presence: .missing)
+]
+guard Keys.summary(keyStatuses) == "2 registered · 1 present · 1 missing", Keys.summary([]) == "none registered" else {
+    fail("key summary: \(Keys.summary(keyStatuses))")
+}
+let stampedRegister = Keys.stamped(KeyRegister.example, statuses: keyStatuses, now: keysNow)
+guard stampedRegister.keys[0].verifiedAt == keysNow, stampedRegister.keys[1].verifiedAt == nil else {
+    fail("only entries that passed get a verifiedAt stamp")
+}
+guard Keys.line(KeyStatus(entry: stampedRegister.keys[0], presence: .present), now: keysNow.addingTimeInterval(120)) == "Claude Code OAuth · keychain Claude Code-credentials · present · verified 2m ago" else {
+    fail("key line: \(Keys.line(KeyStatus(entry: stampedRegister.keys[0], presence: .present), now: keysNow.addingTimeInterval(120)))")
+}
+print("ok    key register: flat JSON round-trips, presence without values, verifiedAt only on pass")
 print("PASS  memoization verified: nothing re-read")

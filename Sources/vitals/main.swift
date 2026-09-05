@@ -112,6 +112,40 @@ case "awake":
     Printer.out("context   \(Awake.describe(context)) · lid-close sleeps: \(context.lidClosesSleep)")
     Printer.out("mode      \(mode.rawValue) · \(decision.reason) · lid-close override \(decision.overrideLidSleep ? "wanted" : "not wanted")")
 
+case "keys":
+    // The register as an agent sees it: name, where the secret lives,
+    // present or missing, when last verified. Never a value.
+    // `vitals keys init` writes the example register when none exists.
+    let url = KeyRegisterStore.url()
+    if arguments.dropFirst().first == "init" {
+        if FileManager.default.fileExists(atPath: url.path) {
+            Printer.out("exists    \(url.path)")
+        } else {
+            do {
+                try KeyRegisterStore.save(KeyRegister.example)
+                Printer.out("created   \(url.path)")
+            } catch {
+                Printer.err("vitals: cannot write \(url.path): \(error)")
+                exit(1)
+            }
+        }
+    }
+    switch KeyRegisterStore.load(from: url) {
+    case let .failure(error):
+        Printer.err("vitals: \(url.path) unreadable: \(error)")
+        exit(1)
+    case .success(nil):
+        Printer.out("register  none · run `vitals keys init` to create \(url.path)")
+    case let .success(register?):
+        let statuses = KeyChecks.check(register)
+        Printer.out("register  \(url.path) · \(Keys.summary(statuses))")
+        for status in statuses {
+            Printer.out("key       \(Keys.line(status, now: Date()))")
+            if let note = status.entry.note { Printer.out("          \(note)") }
+            if let link = status.entry.url { Printer.out("          \(link)") }
+        }
+    }
+
 case "budget":
     // Forecast per limit row from the persisted samples, tokens per live
     // session from the transcripts, and the warning file. Fetches usage once,
@@ -181,6 +215,6 @@ case "bar":
     application.run()
 
 default:
-    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | budget | mcp [refresh] | awake | bar]")
+    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | budget | keys [init] | mcp [refresh] | awake | bar]")
     exit(2)
 }
