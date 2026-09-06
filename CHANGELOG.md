@@ -16,25 +16,24 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
   never read, shown or copied. `vitals keys` prints the list for agents,
   `vitals keys init` writes an example register. Verified stamps are written
   back at most hourly.
-- Claude budget forecast. Every usage poll stores one sample per limit
-  row (`~/Library/Application Support/Vitals/usage-samples.json`, 2 h
-  kept); the rate over the last 15 minutes gives "empty in" per row, and a
-  limit that runs out before its reset turns its bar amber, coral under an
-  hour. Per live session the transcript under `~/.claude/projects` gives the
-  last 15 minutes as calls, context per call, output rate and cache reads
-  (deduplicated by message id). The session row shows `×10 · 350k ctx`:
-  cache reads are two orders of magnitude above everything else because
-  every call re-reads the whole context, so a raw tokens-per-minute figure
-  misleads; the ranking of the heaviest session uses price-weighted tokens
-  (input 1, cache write 1.25, cache read 0.1, output 5).
-  While a warning is active: one notification, a line under the usage
-  rows naming the heaviest session (click sends it SIGINT, which
-  interrupts its turn like Esc), and
-  `~/.config/vitals/budget-warning.json` for agents. `install.sh`
-  registers `budget-warning.sh` from the bundle as a Claude Code
-  PreToolUse hook: it hands the warning to a running agent as context at
-  most once per session per 10 minutes, always exits 0, never blocks.
-  `vitals budget` prints forecasts, per-session burn and the warning.
+- Per-session burn and the Fable subagent gate. Per live session the
+  transcript under `~/.claude/projects` gives the last 15 minutes as calls,
+  context per call, output rate and cache reads (deduplicated by message
+  id); the session row shows `×10 · 350k ctx`, the tooltip ranks by
+  price-weighted tokens (input 1, cache write 1.25, cache read 0.1,
+  output 5) because every call re-reads the whole context and a raw
+  tokens-per-minute figure misleads. `install.sh` registers
+  `fable-subagent-gate.sh` from the bundle as a Claude Code PreToolUse hook
+  matched on the `Agent` tool: silent unless the subagent would run on
+  Fable, then one denial with a reminder the orchestrator must answer
+  (resend with `model: "opus"`, or resend unchanged within two minutes to
+  keep Fable), asked again at every fifth Fable spawn. Each `Agent` call is
+  logged to `~/.config/vitals/agent-spawns/<session>.jsonl`; the session row
+  adds `3 agents, 2 Fable`. `vitals burn` prints both per session from local
+  files. No usage forecast: a 15-minute rate extrapolated to "empty in 11h"
+  was never right and the agent-facing warning text it produced was
+  ignorable by design, so both are gone along with the usage-samples file,
+  the warning file and the click-to-interrupt line.
 - Clipboard history in its own floating panel, toggled with ⌃⇧V (Carbon
   hotkey, no Accessibility permission) or from one menu row. Text only:
   the general pasteboard is polled every 0.5 s, writes marked

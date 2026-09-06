@@ -17,24 +17,28 @@ where you need it. Writes that password managers mark as concealed or
 transient are never recorded. The history lives owner-only in
 `~/Library/Application Support/Vitals/clipboard.json`; Clear empties it.
 
-## Claude budget
+## Claude sessions and the Fable gate
 
-The usage endpoint reports percentages only, so Vitals samples them once a
-minute and forecasts each limit from the last 15 minutes: "empty in 3h 20m,
-resets in 6d". A limit that runs out before its reset is a warning: the bar
-turns amber (coral under an hour), a notification fires once, a line under
-the usage rows names the session burning most tokens (click it to send that
-session SIGINT, the same interrupt as Esc), and
-`~/.config/vitals/budget-warning.json` is written for agents. Per session
-the transcripts under `~/.claude/projects` give calls, context per call and
-output rate for the last 15 minutes, shown as `×10 · 350k ctx`; the heaviest
-session is ranked by price-weighted tokens, since cache reads of a large
-context dwarf everything else.
+Per live session the transcript under `~/.claude/projects` gives calls,
+context per call and output rate for the last 15 minutes, shown in the
+session row as `×10 · 350k ctx`. Cache reads of a large context dwarf
+everything else, so the tooltip ranks by price-weighted tokens, never raw
+tokens per minute. The usage bars show what the endpoint reports and nothing
+more: no forecast, because a rate measured over a 15-minute burst says
+nothing about the hours ahead, and the 5-hour window already stops a burst.
 
-`install.sh` registers `budget-warning.sh` as a Claude Code PreToolUse hook.
-While a warning is active and fresh it hands the advice to a running agent
-as additional context, once per session per 10 minutes; it always exits 0
-and cannot block a tool call. `vitals budget` prints the same picture.
+The one expensive action worth guarding is a subagent on Fable, since only
+Fable counts against the weekly Fable limit. `install.sh` registers
+`fable-subagent-gate.sh` as a Claude Code PreToolUse hook matched on the
+`Agent` tool. It is silent unless the subagent would run on Fable: an explicit
+`model: fable`, or no model where the agent definition has none and the calling
+session's transcript shows Fable. Then it denies the call once with a reminder
+the orchestrator has to answer: resend with `model: "opus"`, or resend the same
+call within two minutes to keep Fable. It asks again at every fifth Fable
+spawn. Every `Agent` call is logged to
+`~/.config/vitals/agent-spawns/<session>.jsonl`, and the session row shows
+the tally: `3 agents, 2 Fable`. `vitals burn` prints the same per session,
+from local files only.
 
 ## API keys
 

@@ -8,19 +8,9 @@ struct ClaudeSectionModel: Equatable {
     let telemetry: ClaudeTelemetrySnapshot
     let sessions: ClaudeSessionsSnapshot
     let now: Date
-    /// By usage row id; present once 4 minutes of samples exist.
-    var forecasts: [String: UsageForecast] = [:]
-    /// By pid; tokens the session's transcript shows for the last 15 minutes.
+    /// By pid; tokens the session's transcript shows for the last 15 minutes
+    /// and the subagents it started.
     var burns: [Int32: SessionBurn] = [:]
-    /// The limit that runs out before its reset, with the heaviest session.
-    var warning: BudgetWarning?
-
-    /// One line under the usage rows: what runs out, when, who burns most.
-    var warningText: String? {
-        guard let warning, !telemetry.usage.rows.isEmpty else { return nil }
-        let who = warning.sessions.first.map { " · \($0.name) \($0.short) · click to interrupt" } ?? ""
-        return "⚠ \(warning.row) empty in \(warning.emptyIn), resets in \(warning.resetsIn)\(who)"
-    }
 
     static let usageRowHeight = 44.0
     static let messageHeight = 34.0
@@ -41,7 +31,7 @@ struct ClaudeSectionModel: Equatable {
     /// Menu item views cannot resize while the menu is open, so the controller
     /// re-renders when this changes.
     var layoutSignature: String {
-        "\(telemetry.usage.rows.count)/\(visibleSessions.count)/\(hiddenSessionCount > 0)/\(warningText != nil)"
+        "\(telemetry.usage.rows.count)/\(visibleSessions.count)/\(hiddenSessionCount > 0)"
     }
 
     var height: CGFloat {
@@ -50,9 +40,6 @@ struct ClaudeSectionModel: Equatable {
         height += usageRows > 0
             ? Double(usageRows) * Self.usageRowHeight
             : Self.messageHeight
-        if warningText != nil {
-            height += Self.messageHeight
-        }
         height += Self.sessionsHeaderHeight
         height += Double(visibleSessions.count) * Self.sessionRowHeight
         if hiddenSessionCount > 0 {
@@ -74,8 +61,6 @@ final class ClaudeSectionView: NSView {
     private let moreLabel = NSTextField(labelWithString: "")
     private var usageRows: [MetricBarView] = []
     private var sessionRows: [ClaudeSessionRowView] = []
-    /// Set by the controller: SIGINT to the pid on the warning line.
-    var onInterrupt: (@MainActor (Int32) -> Void)?
     private var model: ClaudeSectionModel
 
     init(model: ClaudeSectionModel) {
@@ -113,7 +98,6 @@ final class ClaudeSectionView: NSView {
 
         addSubview(sectionLabel)
         addSubview(statusBadge)
-        messageLabel.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(warningClicked)))
         addSubview(messageLabel)
         addSubview(sessionsLabel)
         addSubview(sessionsDetail)
@@ -136,11 +120,6 @@ final class ClaudeSectionView: NSView {
         guard sameShape else { return false }
         apply()
         return true
-    }
-
-    @objc private func warningClicked() {
-        guard let pid = model.warning?.sessions.first?.pid else { return }
-        onInterrupt?(pid)
     }
 
     private func rebuildRows() {
@@ -167,16 +146,11 @@ final class ClaudeSectionView: NSView {
         statusBadge.toolTip = health.detail
 
         for (view, row) in zip(usageRows, model.telemetry.usage.rows) {
-            let forecast = model.forecasts[row.id]
-            let suffix = forecast.flatMap { f in f.emptyIn.map { " · empty in \(ClaudeBudget.duration($0))" } } ?? ""
-            let color: NSColor = forecast?.critical == true ? Palette.coral
-                : forecast?.depletesBeforeReset == true ? Palette.amber
-                : Palette.usage(row.fraction)
             view.update(
                 title: row.label,
-                detail: row.detail + suffix,
+                detail: row.detail,
                 fraction: row.fraction,
-                color: color
+                color: Palette.usage(row.fraction)
             )
         }
         if let unavailable = model.telemetry.usage.unavailableMessage {
@@ -184,11 +158,6 @@ final class ClaudeSectionView: NSView {
             messageLabel.textColor = Palette.secondary
             messageLabel.isHidden = false
             messageLabel.toolTip = nil
-        } else if let warning = model.warningText {
-            messageLabel.stringValue = warning
-            messageLabel.textColor = model.warning.map { $0.emptyIn.hasSuffix("m") && !$0.emptyIn.contains("h") && !$0.emptyIn.contains("d") } == true ? Palette.coral : Palette.amber
-            messageLabel.isHidden = false
-            messageLabel.toolTip = model.warning?.advice
         } else {
             messageLabel.isHidden = true
         }
@@ -227,10 +196,6 @@ final class ClaudeSectionView: NSView {
             for row in usageRows {
                 y -= ClaudeSectionModel.usageRowHeight
                 row.frame = NSRect(x: inset, y: y + 2, width: contentWidth, height: 42)
-            }
-            if model.warningText != nil {
-                y -= ClaudeSectionModel.messageHeight
-                messageLabel.frame = NSRect(x: inset, y: y + 4, width: contentWidth, height: 28)
             }
         }
 
@@ -308,7 +273,7 @@ final class ClaudeSessionRowView: NSView {
         dot.layer?.backgroundColor = color.cgColor
         nameLabel.stringValue = session.name
         cwdLabel.stringValue = session.abbreviatedCwd()
-        let rate = burn.map { $0.counts.calls > 0 ? " · \($0.short)" : "" } ?? ""
+        let rate = burn.map { $0.short == "idle" ? "" : " · \($0.short)" } ?? ""
         ageLabel.stringValue = "\(session.status.rawValue) · \(Format.age(since: session.startedAt, now: now))\(rate)"
         ageLabel.textColor = session.status == .busy ? Palette.blue : Palette.secondary
         toolTip = "pid \(session.pid) · \(session.cwd)\nsession \(session.sessionId)"

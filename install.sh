@@ -24,9 +24,10 @@ done
 launchctl bootstrap "$domain" "$plist"
 "$app/Contents/MacOS/vitals" snapshot > /dev/null
 
-# Register the budget-warning hook once: a PreToolUse entry in
-# ~/.claude/settings.json pointing at the script inside the bundle.
-python3 - "$app/Contents/Resources/budget-warning.sh" <<'PY'
+# Register the Fable subagent gate: one PreToolUse entry matched on the
+# Agent tool in ~/.claude/settings.json, pointing at the script inside the
+# bundle. Any earlier Vitals hook entry is replaced.
+python3 - "$app/Contents/Resources/fable-subagent-gate.sh" <<'PY'
 import json, os, sys
 path = os.path.expanduser("~/.claude/settings.json")
 command = sys.argv[1].replace(os.path.expanduser("~"), "$HOME", 1)
@@ -34,16 +35,21 @@ try:
     settings = json.load(open(path))
 except FileNotFoundError:
     settings = {}
-hooks = settings.setdefault("hooks", {}).setdefault("PreToolUse", [])
-if any(h.get("command") == command for group in hooks for h in group.get("hooks", [])):
+hooks = settings.setdefault("hooks", {})
+groups = hooks.get("PreToolUse", [])
+def is_vitals(group):
+    return any(h.get("command", "").endswith(("fable-subagent-gate.sh", "budget-warning.sh")) for h in group.get("hooks", []))
+kept = [g for g in groups if not is_vitals(g)]
+kept.append({"matcher": "Agent", "hooks": [{"type": "command", "command": command, "timeout": 5}]})
+if kept == groups:
     print("hook already registered")
     sys.exit(0)
-hooks.append({"hooks": [{"type": "command", "command": command, "timeout": 5}]})
+hooks["PreToolUse"] = kept
 tmp = path + ".tmp"
 with open(tmp, "w") as f:
     json.dump(settings, f, indent=2)
     f.write("\n")
 os.replace(tmp, path)
-print("hook registered in ~/.claude/settings.json")
+print("fable-subagent-gate registered as PreToolUse(Agent) in ~/.claude/settings.json")
 PY
 echo "installed $app · agent $label running"

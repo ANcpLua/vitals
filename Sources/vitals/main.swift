@@ -146,41 +146,19 @@ case "keys":
         }
     }
 
-case "budget":
-    // Forecast per limit row from the persisted samples, tokens per live
-    // session from the transcripts, and the warning file. Fetches usage once,
-    // which can meet the endpoint's rate limit; the samples still print.
-    let semaphore = DispatchSemaphore(value: 0)
-    Task.detached {
-        let now = Date()
-        let telemetry = await ClaudeTelemetryClient().fetch()
-        let samples = UsageSampleStore.load()
-        if let message = telemetry.usage.unavailableMessage {
-            Printer.out("usage     \(message)")
-        }
-        for row in telemetry.usage.rows {
-            let forecast = ClaudeBudget.forecast(row: row, samples: samples, now: now)
-            let line = forecast.map { f in
-                String(format: "%.1f%%/h", f.percentPerHour)
-                    + " · empty in \(f.emptyIn.map(ClaudeBudget.duration) ?? "never")"
-                    + " · resets in \(f.resetsIn.map(ClaudeBudget.duration) ?? "unknown")"
-                    + (f.depletesBeforeReset ? " · RUNS OUT BEFORE RESET" : "")
-            } ?? "no forecast yet (needs 4 min of samples, has \(samples.filter { $0.rowID == row.id }.count))"
-            Printer.out("limit     \(row.label.padding(toLength: 22, withPad: " ", startingAt: 0))\(row.detail) · \(line)")
-        }
-        let home = ClaudeHome()
-        for session in ClaudeSessionStore.load(home: home).sessions {
-            let burn = ClaudeTranscripts.burn(for: session, home: home, now: now)
-            Printer.out("session   \(session.name.padding(toLength: 14, withPad: " ", startingAt: 0)) pid \(session.pid)  \(burn.long) · \(session.abbreviatedCwd())")
-        }
-        if let warning = BudgetWarningStore.load() {
-            Printer.out("warning   \(warning.row) · empty in \(warning.emptyIn) · \(BudgetWarningStore.url().path) · updated \(Format.age(since: warning.updatedAt)) ago")
-        } else {
-            Printer.out("warning   none · \(BudgetWarningStore.url().path) absent")
-        }
-        semaphore.signal()
+case "burn":
+    // Per live session: calls, context and output rate for the last 15
+    // minutes from its transcript, plus the subagents it started, from the
+    // gate hook's log. Reads local files only; never touches the usage endpoint.
+    let now = Date()
+    let home = ClaudeHome()
+    let sessions = ClaudeSessionStore.load(home: home).sessions
+    if sessions.isEmpty { Printer.out("session   none running") }
+    for session in sessions {
+        let burn = ClaudeTranscripts.burn(for: session, home: home, now: now)
+        Printer.out("session   \(session.name.padding(toLength: 14, withPad: " ", startingAt: 0)) pid \(session.pid)  \(burn.long) · \(session.abbreviatedCwd())")
     }
-    semaphore.wait()
+    Printer.out("spawns    \(AgentSpawns.directory().path)")
 
 case "mcp":
     // Headless MCP view: every server Claude Code would see for the live
@@ -215,6 +193,6 @@ case "bar":
     application.run()
 
 default:
-    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | budget | keys [init] | mcp [refresh] | awake | bar]")
+    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | burn | keys [init] | mcp [refresh] | awake | bar]")
     exit(2)
 }

@@ -14,7 +14,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$scratch/release/vitals" "$app/Contents/MacOS/vitals"
 cp "Info.plist" "$app/Contents/Info.plist"
 cp "PrivacyInfo.xcprivacy" "$app/Contents/Resources/PrivacyInfo.xcprivacy"
-cp "hooks/budget-warning.sh" "$app/Contents/Resources/budget-warning.sh"
+cp "hooks/fable-subagent-gate.sh" "$app/Contents/Resources/fable-subagent-gate.sh"
 codesign --force --sign - "$app"
 
 echo "built $app"
