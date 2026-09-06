@@ -327,35 +327,9 @@ expect(snapshot(utilization: 50).keepingUsage(from: good).usage.rows.first?.util
 let denied = ClaudeTelemetrySnapshot(health: good.health, usage: .accessDenied, capturedAt: Date())
 expect(denied.keepingUsage(from: good).usage.isAccessDenied, "access denial must not be papered over with old rows")
 
-// Budget: the rate comes from the oldest and newest sample inside the
-// 15-minute window, needs four minutes of span, drops everything before a
-// reset, and only a limit that runs out before its reset is a warning.
+// Presentation helpers and the project slug.
 let budgetNow = Date(timeIntervalSince1970: 1_800_000_000)
-let weekly = ClaudeUsageRow(id: "weekly_all", label: "Weekly · all models", fraction: 0.2, detail: "20%", utilization: 20, resetsAt: budgetNow.addingTimeInterval(6 * 86_400))
-var budgetSamples: [UsageSample] = []
-for minute in stride(from: 10, through: 0, by: -1) {
-    budgetSamples.append(UsageSample(rowID: "weekly_all", at: budgetNow.addingTimeInterval(Double(-minute) * 60), utilization: 20 - Double(minute)))
-}
-let rising = ClaudeBudget.forecast(row: weekly, samples: budgetSamples, now: budgetNow)
-expect(rising.map { abs($0.percentPerHour - 60) < 0.01 } == true, "10 points in 10 minutes must be 60 %/h, got \(String(describing: rising?.percentPerHour))")
-expect(rising.map { abs(($0.emptyIn ?? 0) - 80 * 60) < 1 } == true, "80 % left at 60 %/h must be empty in 80 minutes")
-expect(rising?.depletesBeforeReset == true, "empty in 80 minutes with a reset in 6 days must warn")
-expect(rising?.critical == false, "80 minutes is amber, not coral")
-expect(ClaudeBudget.forecast(row: weekly, samples: Array(budgetSamples.suffix(3)), now: budgetNow) == nil, "two minutes of samples must not forecast")
-let flat = budgetSamples.map { UsageSample(rowID: $0.rowID, at: $0.at, utilization: 20) }
-expect(ClaudeBudget.forecast(row: weekly, samples: flat, now: budgetNow)?.emptyIn == nil, "a flat line never runs out")
-var withReset = budgetSamples
-withReset[5] = UsageSample(rowID: "weekly_all", at: withReset[5].at, utilization: 1)
-for i in 6..<withReset.count { withReset[i] = UsageSample(rowID: "weekly_all", at: withReset[i].at, utilization: Double(i - 4)) }
-let afterReset = ClaudeBudget.forecast(row: weekly, samples: withReset, now: budgetNow)
-expect(afterReset.map { abs($0.percentPerHour - 60) < 0.01 } == true, "samples before a reset must be discarded, got \(String(describing: afterReset?.percentPerHour))")
-let soonReset = ClaudeUsageRow(id: "session", label: "5-hour limit", fraction: 0.2, detail: "20%", utilization: 20, resetsAt: budgetNow.addingTimeInterval(30 * 60))
-let sessionSamples = budgetSamples.map { UsageSample(rowID: "session", at: $0.at, utilization: $0.utilization) }
-let resetFirst = ClaudeBudget.forecast(row: soonReset, samples: sessionSamples, now: budgetNow)
-expect(resetFirst?.depletesBeforeReset == false, "a limit that resets before it runs out is not a warning")
-expect(ClaudeBudget.worst([rising!, resetFirst!])?.rowID == "weekly_all", "worst picks the row that runs out before its reset")
-expect(ClaudeBudget.duration(80 * 60) == "1h 20m" && ClaudeBudget.duration(6 * 86_400 + 3_600) == "6d 1h" && ClaudeBudget.duration(30) == "1m", "duration formatting")
-expect(ClaudeBudget.tokens(240_000) == "240k" && ClaudeBudget.tokens(1_260_000) == "1.3M" && ClaudeBudget.tokens(850) == "850", "token formatting")
+expect(ClaudeBurn.tokens(240_000) == "240k" && ClaudeBurn.tokens(1_260_000) == "1.3M" && ClaudeBurn.tokens(850) == "850", "token formatting")
 expect(ClaudeTranscripts.slug("/Users/ancplua/repo-playground/vitals") == "-Users-ancplua-repo-playground-vitals", "project slug")
 
 // Transcripts: assistant lines inside the window count once per message id
@@ -378,21 +352,32 @@ expect(counted.calls == 2 && counted.input == 110 && counted.output == 2 && coun
        "transcript counts must dedupe by message id and honor the window, got \(counted)")
 expect(counted.total == 122 && counted.context == 60 && abs(counted.weighted - (110 + 5 + 0.6 + 10)) < 0.01, "totals, context and price weighting")
 
-// Warning file round-trips and carries the advice the hook hands over.
+// Burn presentation, and the subagent spawn log the gate hook writes: a
+// denied line is a reminder, not a spawn; everything else counts, Fable
+// separately.
 let burn = SessionBurn(pid: 4242, name: "ancplua-a4", cwd: "/Users/ancplua/x", counts: TokenCounts(calls: 10, input: 320, output: 16_976, cacheWrite: 20_621, cacheRead: 3_542_066), minutes: 15)
 expect(burn.short == "×10 · 356k ctx" && abs(burn.outputPerMinute - 1_131.7) < 0.1 && abs(burn.tokensPerMinute - 238_665.5) < 0.1, "burn presentation: \(burn.short) \(burn.outputPerMinute)")
-let warning = BudgetWarning.make(rising!, sessions: [burn], now: budgetNow)
-expect(warning.active && warning.emptyIn == "1h 20m" && warning.resetsIn == "6d" && warning.sessions.first?.pid == 4242, "warning fields: \(warning.emptyIn) \(warning.resetsIn)")
-expect(warning.advice.contains("ancplua-a4 (pid 4242") && warning.advice.contains("10 calls in 15 min, 356k context each"), "advice names the heaviest session: \(warning.advice)")
-let warningURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("vitals-claude-selftest-\(getpid())/budget-warning.json")
+let spawnLog = [
+    #"{"t": 1.0, "model": "fable", "fable": true, "denied": true, "description": "asked"}"#,
+    #"{"t": 2.0, "model": "fable", "fable": true, "denied": false, "description": "kept"}"#,
+    #"{"t": 3.0, "model": "opus", "fable": false, "denied": false, "description": "worker"}"#,
+    "not json",
+    #"{"t": 4.0, "model": "claude-fable-5-1", "source": "inherits parent", "fable": true, "denied": false}"#
+].joined(separator: "\n")
+let spawns = AgentSpawns.counts(in: spawnLog)
+expect(spawns == SpawnCounts(spawned: 3, fable: 2, reminders: 1), "spawn log counts: \(spawns)")
+expect(spawns.short == "3 agents, 2 Fable" && SpawnCounts().short == nil && SpawnCounts(spawned: 1).short == "1 agent", "spawn presentation")
+let withSpawns = SessionBurn(pid: 1, name: "s", cwd: "/", counts: TokenCounts(), minutes: 15, spawns: spawns)
+expect(withSpawns.short == "3 agents, 2 Fable" && withSpawns.long == "no calls in the last 15 min; 3 agents, 2 Fable spawned, 1 Fable reminder", "spawns without calls: \(withSpawns.long)")
+let spawnDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("vitals-claude-selftest-\(getpid())/agent-spawns")
 do {
-    try BudgetWarningStore.save(warning, to: warningURL)
-    expect(BudgetWarningStore.load(from: warningURL) == warning, "warning file must round-trip")
-    BudgetWarningStore.clear(at: warningURL)
-    expect(BudgetWarningStore.load(from: warningURL) == nil, "clear must remove the warning file")
-    try? FileManager.default.removeItem(at: warningURL.deletingLastPathComponent())
+    try FileManager.default.createDirectory(at: spawnDir, withIntermediateDirectories: true)
+    try spawnLog.write(to: spawnDir.appendingPathComponent("abc.jsonl"), atomically: true, encoding: .utf8)
+    expect(AgentSpawns.counts(for: "abc", directory: spawnDir) == spawns, "spawn log is read per session id")
+    expect(AgentSpawns.counts(for: "missing", directory: spawnDir) == SpawnCounts(), "a session without a log spawned nothing")
+    try? FileManager.default.removeItem(at: spawnDir.deletingLastPathComponent())
 } catch {
-    expect(false, "warning store: \(error)")
+    expect(false, "spawn log store: \(error)")
 }
 
 if failures.isEmpty {
