@@ -310,6 +310,75 @@ do {
 guard ClipboardStore.load(from: clipURL) == .empty else { fail("a missing clipboard file must load as empty") }
 print("ok    clipboard history: capped, deduped, secrets skipped, owner-only store round-trips")
 
+// Copied images: referenced by digest, deduped like text, capped far lower
+// than text because every one of them is a file, and a history written
+// before images existed still decodes.
+func picture(_ seed: Int, bytes: Int = 4_096) -> ClipboardImage {
+    ClipboardImage(digest: String(format: "%064x", seed), width: 1_280, height: 720, bytes: bytes)
+}
+var shots = ClipboardHistory.empty
+for i in 0..<(ClipboardHistory.imageLimit + 5) {
+    shots = shots.adding(picture(i), at: Date(timeIntervalSince1970: Double(i)))
+}
+shots = shots.adding("a text entry", at: Date(timeIntervalSince1970: 9_000))
+guard shots.imageDigests.count == ClipboardHistory.imageLimit,
+      shots.entries.count == ClipboardHistory.imageLimit + 1,
+      shots.entries.first?.text == "a text entry",
+      shots.entries.contains(where: { $0.image?.digest == picture(ClipboardHistory.imageLimit + 4).digest }),
+      !shots.entries.contains(where: { $0.image?.digest == picture(0).digest }) else {
+    fail("image cap: \(shots.imageDigests.count) images, \(shots.entries.count) entries")
+}
+shots = shots.adding(picture(5), at: Date(timeIntervalSince1970: 9_100))
+guard shots.entries.first?.image?.digest == picture(5).digest,
+      shots.entries.filter({ $0.image?.digest == picture(5).digest }).count == 1,
+      shots.imageDigests.count == ClipboardHistory.imageLimit else {
+    fail("a re-copied image must move to the top, not multiply")
+}
+guard shots.adding(picture(99, bytes: ClipboardHistory.imageByteLimit + 1), at: Date()) == shots,
+      shots.adding(picture(98, bytes: 0), at: Date()) == shots,
+      !ClipboardHistory.records(imageBytes: ClipboardHistory.imageByteLimit + 1),
+      ClipboardHistory.records(imageBytes: ClipboardHistory.imageByteLimit) else {
+    fail("an empty or oversized image must not be recorded")
+}
+let shot = ClipboardEntry(text: "", capturedAt: Date(), image: picture(1, bytes: 2_621_440))
+guard shot.title == "Image 1280 × 720", shot.image?.sizeText == "2.5 MB",
+      picture(1, bytes: 4_096).sizeText == "4 KB",
+      shots.filtered("1280").first?.image != nil, shots.filtered("nothing here").isEmpty else {
+    fail("image rows must be named and searchable by their size, got \(shot.title) \(shot.image?.sizeText ?? "-")")
+}
+let legacy = Data(#"{"entries":[{"capturedAt":"2026-09-01T10:00:00Z","text":"before images"}]}"#.utf8)
+let legacyURL = clipURL.deletingLastPathComponent().appendingPathComponent("legacy.json")
+do {
+    try FileManager.default.createDirectory(at: legacyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try legacy.write(to: legacyURL)
+    let loaded = ClipboardStore.load(from: legacyURL)
+    guard loaded.entries.count == 1, loaded.entries.first?.text == "before images",
+          loaded.entries.first?.image == nil else {
+        fail("a clipboard.json written before images must still load")
+    }
+    let folder = ClipboardStore.imagesURL(for: legacyURL)
+    let kept = try ClipboardStore.writeImage(Data("kept picture".utf8), in: folder)
+    let dropped = try ClipboardStore.writeImage(Data("dropped picture".utf8), in: folder)
+    guard kept == ClipboardStore.digest(Data("kept picture".utf8)), kept != dropped,
+          ClipboardStore.imageData(digest: kept, in: folder) == Data("kept picture".utf8) else {
+        fail("an image file must be named by its digest and read back byte for byte")
+    }
+    let fileMode = (try FileManager.default.attributesOfItem(atPath: ClipboardStore.imageURL(digest: kept, in: folder).path)[.posixPermissions] as? Int) ?? 0
+    let folderMode = (try FileManager.default.attributesOfItem(atPath: folder.path)[.posixPermissions] as? Int) ?? 0
+    guard fileMode == 0o600, folderMode == 0o700 else {
+        fail("copied images must be owner-only, got \(String(fileMode, radix: 8)) in \(String(folderMode, radix: 8))")
+    }
+    ClipboardStore.prune(keeping: [kept], in: folder)
+    guard ClipboardStore.imageData(digest: kept, in: folder) != nil,
+          ClipboardStore.imageData(digest: dropped, in: folder) == nil else {
+        fail("prune must delete unreferenced images and keep referenced ones")
+    }
+    try FileManager.default.removeItem(at: legacyURL.deletingLastPathComponent())
+} catch {
+    fail("clipboard images: \(error)")
+}
+print("ok    clipboard images: deduped by digest, capped at \(ClipboardHistory.imageLimit), owner-only files, orphans pruned")
+
 // Key register: flat JSON round-trips, presence is checked without ever
 // reading a value, and only entries that passed get a verifiedAt stamp.
 let keysNow = Date(timeIntervalSince1970: 1_800_000_000)
