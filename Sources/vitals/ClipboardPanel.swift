@@ -80,7 +80,7 @@ final class ClipboardPanel: NSPanel, NSSearchFieldDelegate, NSTableViewDataSourc
         column.resizingMask = .autoresizingMask
         table.addTableColumn(column)
         table.headerView = nil
-        table.rowHeight = 30
+        table.rowHeight = ClipboardRowView.textHeight
         table.backgroundColor = .clear
         table.intercellSpacing = NSSize(width: 0, height: 2)
         table.selectionHighlightStyle = .regular
@@ -207,6 +207,11 @@ final class ClipboardPanel: NSPanel, NSSearchFieldDelegate, NSTableViewDataSourc
         rows.count
     }
 
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        guard row >= 0, row < rows.count, rows[row].image != nil else { return ClipboardRowView.textHeight }
+        return ClipboardRowView.imageHeight
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let view = tableView.makeView(withIdentifier: Self.column, owner: nil) as? ClipboardRowView
             ?? ClipboardRowView(identifier: Self.column)
@@ -229,12 +234,22 @@ private final class ClipboardTableRowView: NSTableRowView {
 }
 
 private final class ClipboardRowView: NSTableCellView {
+    static let textHeight: CGFloat = 30
+    static let imageHeight: CGFloat = 56
     private let titleLabel = NSTextField(labelWithString: "")
     private let metaLabel = NSTextField(labelWithString: "")
+    private let thumbnail = NSImageView()
+    private var showsImage = false
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
         self.identifier = identifier
+        thumbnail.imageScaling = .scaleProportionallyUpOrDown
+        thumbnail.imageAlignment = .alignLeft
+        thumbnail.wantsLayer = true
+        thumbnail.layer?.cornerRadius = 4
+        thumbnail.layer?.masksToBounds = true
+        addSubview(thumbnail)
         titleLabel.font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
         titleLabel.textColor = Palette.primary
         titleLabel.lineBreakMode = .byTruncatingTail
@@ -252,16 +267,49 @@ private final class ClipboardRowView: NSTableCellView {
 
     func update(_ entry: ClipboardEntry) {
         titleLabel.stringValue = entry.title
-        let lines = entry.lineCount
-        metaLabel.stringValue = (lines > 1 ? "\(lines) lines · " : "") + Format.age(since: entry.capturedAt)
-        toolTip = entry.text.count > 400 ? String(entry.text.prefix(400)) + "…" : entry.text
+        let age = Format.age(since: entry.capturedAt)
+        if let image = entry.image {
+            showsImage = true
+            thumbnail.isHidden = false
+            thumbnail.image = ClipboardThumbnails.thumbnail(for: image)
+            metaLabel.stringValue = "\(image.sizeText) · \(age)"
+            toolTip = "Image \(image.dimensionText) · \(image.sizeText)"
+        } else {
+            showsImage = false
+            thumbnail.isHidden = true
+            thumbnail.image = nil
+            let lines = entry.lineCount
+            metaLabel.stringValue = (lines > 1 ? "\(lines) lines · " : "") + age
+            toolTip = entry.text.count > 400 ? String(entry.text.prefix(400)) + "…" : entry.text
+        }
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
         let metaWidth: CGFloat = 96
-        metaLabel.frame = NSRect(x: bounds.width - 12 - metaWidth, y: 7, width: metaWidth, height: 14)
-        titleLabel.frame = NSRect(x: 12, y: 6, width: max(0, bounds.width - 12 - metaWidth - 20), height: 17)
+        let inset: CGFloat = 12
+        let labelHeight: CGFloat = 17
+        if showsImage {
+            let picture = thumbnail.image?.size ?? NSSize(width: ClipboardThumbnails.maxWidth, height: ClipboardThumbnails.maxHeight)
+            let middle = bounds.height / 2
+            thumbnail.frame = NSRect(
+                x: inset,
+                y: middle - picture.height / 2,
+                width: picture.width,
+                height: picture.height
+            )
+            let textLeft = inset + ClipboardThumbnails.maxWidth + inset
+            metaLabel.frame = NSRect(x: bounds.width - inset - metaWidth, y: middle - labelHeight / 2, width: metaWidth, height: 14)
+            titleLabel.frame = NSRect(
+                x: textLeft,
+                y: middle - labelHeight / 2,
+                width: max(0, bounds.width - textLeft - metaWidth - inset - 8),
+                height: labelHeight
+            )
+            return
+        }
+        metaLabel.frame = NSRect(x: bounds.width - inset - metaWidth, y: 7, width: metaWidth, height: 14)
+        titleLabel.frame = NSRect(x: inset, y: 6, width: max(0, bounds.width - inset - metaWidth - 20), height: labelHeight)
     }
 }

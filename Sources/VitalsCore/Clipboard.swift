@@ -1,17 +1,49 @@
 import Foundation
 
-/// One copied text. Equal texts collapse into one entry that moves to the top.
+/// A copied image, kept as a PNG file next to clipboard.json. Only the
+/// reference lives in the history: JSON stays small and the picture stays a
+/// picture. The digest is the file name, so equal images collapse.
+public struct ClipboardImage: Codable, Equatable, Sendable {
+    public let digest: String
+    public let width: Int
+    public let height: Int
+    public let bytes: Int
+
+    public init(digest: String, width: Int, height: Int, bytes: Int) {
+        self.digest = digest
+        self.width = width
+        self.height = height
+        self.bytes = bytes
+    }
+
+    public var dimensionText: String { "\(width) × \(height)" }
+
+    public var sizeText: String {
+        bytes >= 1_048_576
+            ? String(format: "%.1f MB", Double(bytes) / 1_048_576)
+            : "\(max(1, bytes / 1_024)) KB"
+    }
+}
+
+/// One copied text or image. Equal texts and equal images collapse into one
+/// entry that moves to the top.
 public struct ClipboardEntry: Codable, Equatable, Sendable {
     public let text: String
     public let capturedAt: Date
+    /// Absent on text entries, and absent in files written before images
+    /// were recorded, which is why it decodes as optional.
+    public let image: ClipboardImage?
 
-    public init(text: String, capturedAt: Date) {
+    public init(text: String, capturedAt: Date, image: ClipboardImage? = nil) {
         self.text = text
         self.capturedAt = capturedAt
+        self.image = image
     }
 
-    /// First non-blank line with runs of whitespace collapsed: the list row.
+    /// The list row: an image is named by its size, a text by its first
+    /// non-blank line with runs of whitespace collapsed.
     public var title: String {
+        if let image { return "Image \(image.dimensionText)" }
         let line = text.split(whereSeparator: \.isNewline).first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
         return line.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
@@ -23,6 +55,10 @@ public struct ClipboardEntry: Codable, Equatable, Sendable {
 /// it, the store persists it, the panel reads it.
 public struct ClipboardHistory: Codable, Equatable, Sendable {
     public static let limit = 200
+    /// Images are files, so they get their own, much smaller cap and a size
+    /// ceiling: the history must never grow into a disk problem.
+    public static let imageLimit = 30
+    public static let imageByteLimit = 16 * 1_048_576
     /// Pasteboard types that mark a write as secret or ephemeral. Password
     /// managers set the first two; nothing carrying them is ever recorded.
     public static let ignoredTypes: Set<String> = [
@@ -42,16 +78,47 @@ public struct ClipboardHistory: Codable, Equatable, Sendable {
         !types.contains(where: ignoredTypes.contains)
     }
 
+    /// An image this big is a screen recording frame or a RAW scan, not
+    /// something to keep 30 of.
+    public static func records(imageBytes: Int) -> Bool {
+        imageBytes > 0 && imageBytes <= imageByteLimit
+    }
+
     public func adding(_ text: String, at date: Date) -> ClipboardHistory {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return self }
-        var next = entries.filter { $0.text != text }
+        var next = entries.filter { $0.image != nil || $0.text != text }
         next.insert(ClipboardEntry(text: text, capturedAt: date), at: 0)
         return ClipboardHistory(entries: Array(next.prefix(Self.limit)))
+    }
+
+    public func adding(_ image: ClipboardImage, at date: Date) -> ClipboardHistory {
+        guard Self.records(imageBytes: image.bytes), image.width > 0, image.height > 0 else { return self }
+        var next = entries.filter { $0.image?.digest != image.digest }
+        next.insert(ClipboardEntry(text: "", capturedAt: date, image: image), at: 0)
+        return ClipboardHistory(entries: Array(next.prefix(Self.limit))).trimmingImages()
     }
 
     public func filtered(_ query: String) -> [ClipboardEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else { return entries }
-        return entries.filter { $0.text.localizedCaseInsensitiveContains(needle) }
+        return entries.filter {
+            $0.text.localizedCaseInsensitiveContains(needle) || $0.title.localizedCaseInsensitiveContains(needle)
+        }
+    }
+
+    /// Files the store may keep; everything else in the image folder is an
+    /// orphan from a dropped or cleared entry.
+    public var imageDigests: Set<String> {
+        Set(entries.compactMap { $0.image?.digest })
+    }
+
+    /// Drops the oldest image entries past `imageLimit`, texts untouched.
+    private func trimmingImages() -> ClipboardHistory {
+        var seen = 0
+        return ClipboardHistory(entries: entries.filter { entry in
+            guard entry.image != nil else { return true }
+            seen += 1
+            return seen <= Self.imageLimit
+        })
     }
 }

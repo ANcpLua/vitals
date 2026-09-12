@@ -11,11 +11,14 @@ shows the immediately free capacity.
 
 ## Clipboard
 
-⌃⇧V opens a floating panel over the last 200 copied texts: type to filter,
-↑↓ to move, ↩ or click to put an entry back on the pasteboard, then ⌘V
-where you need it. Writes that password managers mark as concealed or
-transient are never recorded. The history lives owner-only in
-`~/Library/Application Support/Vitals/clipboard.json`; Clear empties it.
+⌃⇧V opens a floating panel over the last 200 copied texts and images: type
+to filter, ↑↓ to move, ↩ or click to put an entry back on the pasteboard,
+then ⌘V where you need it. Copied images show as a thumbnail with their
+size, the newest 30 are kept as PNG in `clipboard-images`, and a copy
+carrying text keeps the text. Writes that password managers mark as
+concealed or transient are never recorded. The history lives owner-only in
+`~/Library/Application Support/Vitals/clipboard.json`; Clear empties it and
+deletes the image files.
 
 ## Claude sessions and the Fable gate
 

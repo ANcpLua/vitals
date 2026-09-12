@@ -5,6 +5,16 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
 ## Unreleased
 
 ### Added
+- Copied images in the clipboard history. A pasteboard write with no text
+  but a PNG or TIFF is normalized to PNG and stored owner-only in
+  `~/Library/Application Support/Vitals/clipboard-images`, named by its
+  SHA-256, so equal images collapse into one entry; the JSON keeps only the
+  reference, dimensions and byte size. The panel shows a thumbnail row with
+  "Image 1280 × 720" and the size, ↩ or a click puts the PNG (and a TIFF
+  flavour) back on the pasteboard. The newest 30 images are kept, anything
+  over 16 MB is skipped, dropped and cleared entries have their files
+  pruned, and a copy that carries text still records the text. Histories
+  written before this load unchanged.
 - API key register, `~/.config/vitals/keys.json`: one entry per secret
   with name, where it lives (`keychain` service and account, `environment`
   variable, `file` path, or a free `reference` such as a 1Password item),

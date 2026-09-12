@@ -496,12 +496,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func clipboardItem() -> NSMenuItem {
         let count = clipboard.history.entries.count
+        let images = clipboard.history.imageDigests.count
         let hotkey = clipboardHotKey == nil ? "hotkey unavailable" : "⌃⇧V"
-        let title = "Clipboard · \(count) \(count == 1 ? "entry" : "entries") · \(hotkey)"
+        let title = "Clipboard · \(count) \(count == 1 ? "entry" : "entries")"
+            + (images > 0 ? " · \(images) \(images == 1 ? "image" : "images")" : "")
+            + " · \(hotkey)"
             + (clipboard.lastError.map { " · \($0)" } ?? "")
         let item = NSMenuItem(title: title, action: #selector(openClipboard), keyEquivalent: "")
         item.target = self
-        item.toolTip = "Text copied anywhere, newest first, 200 kept in ~/Library/Application Support/Vitals/clipboard.json. Secret and transient pasteboard writes are skipped."
+        item.toolTip = "Text and images copied anywhere, newest first, 200 entries in ~/Library/Application Support/Vitals/clipboard.json, the newest \(ClipboardHistory.imageLimit) images as PNG in clipboard-images next to it. Secret and transient pasteboard writes are skipped."
         item.attributedTitle = NSAttributedString(
             string: title,
             attributes: [
