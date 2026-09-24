@@ -400,6 +400,38 @@ do {
     guard case .success(nil) = KeyRegisterStore.load(from: keysDir.appendingPathComponent("absent.json")) else {
         fail("an absent keys.json must load as nil")
     }
+    guard case .failure = KeyRegisterStore.load(from: keysDir) else {
+        fail("an unreadable registry must not be reported as absent")
+    }
+    // Corruption must not replace the last known good copy or turn init into a reset.
+    let backupURL = KeyRegisterStore.backupURL(for: keysURL)
+    let originalBackup = try Data(contentsOf: backupURL)
+    do { try KeyRegisterStore.backup(from: keysURL); fail("corrupt registry must not be backed up") }
+    catch { }
+    do { try KeyRegisterStore.createExampleIfMissing(at: keysURL); fail("init must not replace corruption") }
+    catch { }
+    guard try Data(contentsOf: backupURL) == originalBackup else { fail("corruption replaced the good backup") }
+    try KeyRegisterStore.restore(from: keysURL)
+    guard case let .success(restored?) = KeyRegisterStore.load(from: keysURL), restored == .example,
+          try FileManager.default.contentsOfDirectory(atPath: keysDir.path).contains(where: { $0.contains(".damaged-") }) else {
+        fail("restore must recover entries and preserve the corrupt original")
+    }
+    guard try KeyRegisterStore.createExampleIfMissing(at: keysURL) == false else { fail("init replaced an existing registry") }
+    do { try KeyRegisterStore.restore(from: keysURL); fail("restore must not replace a valid registry") }
+    catch { }
+    try FileManager.default.removeItem(at: keysURL)
+    do { try KeyRegisterStore.createExampleIfMissing(at: keysURL); fail("init must offer recovery when a backup exists") }
+    catch { }
+    try KeyRegisterStore.restore(from: keysURL)
+    guard try Data(contentsOf: keysURL) == originalBackup,
+          (try FileManager.default.attributesOfItem(atPath: backupURL.path)[.posixPermissions] as? Int) == 0o600 else {
+        fail("deletion recovery must preserve the registry and owner-only backup")
+    }
+    try "broken backup".write(to: backupURL, atomically: true, encoding: .utf8)
+    try FileManager.default.removeItem(at: keysURL)
+    do { try KeyRegisterStore.restore(from: keysURL); fail("invalid backup must not be restored") }
+    catch { }
+    guard !FileManager.default.fileExists(atPath: keysURL.path) else { fail("invalid backup created a registry") }
     let secret = keysDir.appendingPathComponent("token")
     try "x".write(to: secret, atomically: true, encoding: .utf8)
     guard KeyChecks.presence(of: .file(path: secret.path), home: keysDir) == .present,

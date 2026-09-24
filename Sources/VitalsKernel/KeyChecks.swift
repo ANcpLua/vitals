@@ -9,7 +9,17 @@ public enum KeyRegisterStore {
     }
 
     public static func load(from url: URL = url()) -> Result<KeyRegister?, MetricsError> {
-        guard let data = try? Data(contentsOf: url) else { return .success(nil) }
+        let data: Data
+        do { data = try Data(contentsOf: url) }
+        catch {
+            let error = error as NSError
+            if error.domain == NSCocoaErrorDomain, error.code == NSFileReadNoSuchFileError { return .success(nil) }
+            return .failure(.syscall(name: "read keys.json", code: Int32(error.code)))
+        }
+        return decode(data)
+    }
+
+    private static func decode(_ data: Data) -> Result<KeyRegister?, MetricsError> {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         do {
@@ -20,11 +30,58 @@ public enum KeyRegisterStore {
     }
 
     public static func save(_ register: KeyRegister, to url: URL = url()) throws {
+        try write(register, to: url)
+        try backup(from: url)
+    }
+
+    public static func backupURL(for url: URL = url()) -> URL {
+        url.deletingPathExtension().appendingPathExtension("last-good.json")
+    }
+
+    /// Keep the complete validated registry, including fields a newer version may use.
+    public static func backup(from url: URL = url()) throws {
+        let data = try Data(contentsOf: url)
+        _ = try decode(data).get()
+        let backup = backupURL(for: url)
+        if (try? Data(contentsOf: backup)) == data { return }
+        try data.write(to: backup, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backup.path)
+    }
+
+    /// Creation must never replace an existing or unreadable registry, even during startup.
+    @discardableResult
+    public static func createExampleIfMissing(at url: URL = url()) throws -> Bool {
+        if try load(from: url).get() != nil { return false }
+        if FileManager.default.fileExists(atPath: backupURL(for: url).path) {
+            throw MetricsError.unexpected(name: "recovery copy exists; use vitals keys restore", value: 0)
+        }
+        try write(.example, to: url, overwrite: false)
+        try backup(from: url)
+        return true
+    }
+
+    /// Explicit recovery only. Preserve the damaged file and never replace a valid registry.
+    public static func restore(from url: URL = url()) throws {
+        if case .success(.some) = load(from: url) {
+            throw MetricsError.unexpected(name: "registry is valid; refusing to replace it", value: 0)
+        }
+        let data = try Data(contentsOf: backupURL(for: url))
+        _ = try decode(data).get()
+        if FileManager.default.fileExists(atPath: url.path) {
+            let damaged = url.deletingPathExtension().appendingPathExtension("damaged-\(UUID().uuidString).json")
+            try FileManager.default.copyItem(at: url, to: damaged)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: damaged.path)
+        }
+        try data.write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    private static func write(_ register: KeyRegister, to url: URL, overwrite: Bool = true) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(register).write(to: url, options: .atomic)
+        try encoder.encode(register).write(to: url, options: overwrite ? .atomic : .withoutOverwriting)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 }

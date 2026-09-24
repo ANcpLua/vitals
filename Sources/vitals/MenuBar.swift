@@ -51,6 +51,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var keysItem: NSMenuItem?
     private var lastSnapshot: Snapshot?
     private var claudeSnapshot: ClaudeTelemetrySnapshot?
+    private var claudeKeyAuthentication: KeyAuthentication?
     private var claudeSessions = ClaudeSessionsSnapshot.empty
     /// MCP servers for the projects of the live sessions plus home. Cheap
     /// file reads on every menu open; tool lists come from the on-disk cache
@@ -521,10 +522,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: API keys
 
-    private func refreshKeys(force: Bool, localAuthentication: Bool = false) {
+    private func refreshKeys(force: Bool, localAuthentication: Bool = false, from url: URL = KeyRegisterStore.url()) {
         guard !keyCheckInFlight else { return }
         if !force, let keyCheckedAt, Date().timeIntervalSince(keyCheckedAt) < 600 { return }
-        switch KeyRegisterStore.load() {
+        switch KeyRegisterStore.load(from: url) {
         case let .failure(error):
             keyRegister = nil
             keyStatuses = []
@@ -539,11 +540,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             updateKeysItem()
         case let .success(register?):
             keyRegisterError = nil
+            keyRegister = register
+            keyStatuses = register.keys.map { entry in
+                keyStatuses.first(where: { $0.entry.name == entry.name && $0.entry == entry })
+                    ?? KeyStatus(entry: entry, presence: .unchecked)
+            }
+            do { try KeyRegisterStore.backup(from: url) }
+            catch { keyRegisterError = "Registry loaded; recovery copy could not be saved" }
             keyCheckInFlight = true
+            updateKeysItem()
             let home = FileManager.default.homeDirectoryForCurrentUser
             Task { [weak self] in
                 let statuses = await Self.checkKeys(register, home: home, localAuthentication: localAuthentication)
-                self?.finishKeys(register, statuses: statuses)
+                self?.finishKeys(register, statuses: statuses, to: url)
             }
         }
     }
@@ -554,7 +563,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     /// Stamps `verifiedAt` on entries that passed, at most once an hour so
     /// the file does not churn.
-    private func finishKeys(_ register: KeyRegister, statuses: [KeyStatus]) {
+    private func finishKeys(_ register: KeyRegister, statuses: [KeyStatus], to url: URL = KeyRegisterStore.url()) {
         keyCheckInFlight = false
         keyCheckedAt = Date()
         let now = Date()
@@ -564,8 +573,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var stamped = register
         if stale {
             stamped = Keys.stamped(register, statuses: statuses, now: now)
-            if case let .success(latest?) = KeyRegisterStore.load(), latest == register {
-                try? KeyRegisterStore.save(stamped)
+            if case let .success(latest?) = KeyRegisterStore.load(from: url), latest == register {
+                try? KeyRegisterStore.save(stamped, to: url)
             }
         }
         for status in statuses where status.authentication.contains(where: { $0.failed }) {
@@ -576,7 +585,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         keyRegister = stamped
         keyStatuses = statuses.map { status in
             KeyStatus(entry: stamped.keys.first { $0.name == status.entry.name } ?? status.entry, presence: status.presence, authentication: status.entry.localCheck?.provider == "claude"
-                      ? keyStatuses.first(where: { $0.entry.name == status.entry.name })?.authentication ?? status.authentication
+                      ? claudeKeyAuthentication.map { [$0] } ?? status.authentication
                       : status.authentication)
         }
         updateKeysItem()
@@ -589,9 +598,32 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return item
     }
 
+    /// Exercises the real menu before the asynchronous credential helper can finish.
+    static func keysLoadingSelftest() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("keys.json")
+        var register = KeyRegister.example
+        register.keys[0].localCheck = try JSONDecoder().decode(LocalKeyCheck.self, from: Data(#"{"provider":"claude"}"#.utf8))
+        try KeyRegisterStore.save(register, to: url)
+        let controller = MenuBarController()
+        let usageCheck = KeyAuthentication(label: "local Claude", state: "valid", detail: "Existing Claude usage check", checkedAt: "2026-09-24T00:00:00Z")
+        controller.claudeKeyAuthentication = usageCheck
+        controller.refreshKeys(force: true, from: url)
+        let item = controller.keysMenuItem()
+        guard item.title.contains("2 registered"), !item.title.contains("no keys.json"),
+              item.submenu?.items.contains(where: { $0.title == "Create example keys.json" }) == false else {
+            throw MetricsError.unexpected(name: "existing register shown as missing while checks run: \(item.title)", value: 0)
+        }
+        controller.finishKeys(register, statuses: register.keys.map { KeyStatus(entry: $0, presence: .present) }, to: url)
+        guard controller.keyStatuses.first?.authentication == [usageCheck] else {
+            throw MetricsError.unexpected(name: "Claude usage proof lost before registry loaded", value: 0)
+        }
+    }
+
     private func updateKeysItem() {
         guard let keysItem else { return }
-        let summary = keyRegisterError ?? (keyRegister == nil ? "no keys.json yet" : Keys.summary(keyStatuses))
+        let summary = keyRegisterError ?? (keyRegister == nil ? "no keys.json yet" : Keys.summary(keyStatuses) + (keyCheckInFlight ? " · checking" : ""))
         let title = "API keys · \(summary)"
         let color: NSColor = keyRegisterError != nil ? Palette.coral
             : keyStatuses.contains { $0.presence == .missing || $0.authentication.contains { $0.needsAttention } } ? Palette.amber
@@ -611,9 +643,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if keyRegister == nil, keyRegisterError == nil {
             submenu.addItem(label("No register yet. An entry is a name, where the secret lives"))
             submenu.addItem(label("(keychain, environment, file or reference), a URL and a note."))
-            let create = NSMenuItem(title: "Create example keys.json", action: #selector(createKeyRegister), keyEquivalent: "")
-            create.target = self
-            submenu.addItem(create)
+            if !FileManager.default.fileExists(atPath: KeyRegisterStore.backupURL().path) {
+                let create = NSMenuItem(title: "Create example keys.json", action: #selector(createKeyRegister), keyEquivalent: "")
+                create.target = self
+                submenu.addItem(create)
+            }
         } else {
             for status in keyStatuses {
                 let entry = status.entry
@@ -640,6 +674,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
         }
         submenu.addItem(.separator())
+        if keyRegister == nil, FileManager.default.fileExists(atPath: KeyRegisterStore.backupURL().path) {
+            let restore = NSMenuItem(title: "Restore saved registry", action: #selector(restoreKeyRegister), keyEquivalent: "")
+            restore.target = self
+            submenu.addItem(restore)
+        }
         let open = NSMenuItem(title: "Open keys.json", action: #selector(openKeyRegister), keyEquivalent: "")
         open.target = self
         submenu.addItem(open)
@@ -657,14 +696,26 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func createKeyRegister() {
-        try? KeyRegisterStore.save(KeyRegister.example)
-        refreshKeys(force: true)
+        do {
+            try KeyRegisterStore.createExampleIfMissing()
+            refreshKeys(force: true)
+        } catch {
+            keyRegisterError = "Cannot create registry: \(error)"
+            updateKeysItem()
+        }
+    }
+
+    @objc private func restoreKeyRegister() {
+        do {
+            try KeyRegisterStore.restore()
+            refreshKeys(force: true)
+        } catch {
+            keyRegisterError = "Cannot restore registry: \(error)"
+            updateKeysItem()
+        }
     }
 
     @objc private func openKeyRegister() {
-        if keyRegister == nil, keyRegisterError == nil {
-            try? KeyRegisterStore.save(KeyRegister.example)
-        }
         NSWorkspace.shared.open(KeyRegisterStore.url())
     }
 
@@ -850,6 +901,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         let check = KeyAuthentication(label: "local Claude", state: state, detail: "Existing Claude usage check",
                                       checkedAt: ISO8601DateFormatter().string(from: snapshot.capturedAt))
+        claudeKeyAuthentication = check
         keyStatuses = keyStatuses.map { status in
             guard status.entry.localCheck?.provider == "claude" else { return status }
             return KeyStatus(entry: status.entry, presence: status.presence, authentication: [check])
