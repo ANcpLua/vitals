@@ -434,3 +434,20 @@ guard Keys.line(KeyStatus(entry: stampedRegister.keys[0], presence: .present), n
 }
 print("ok    key register: flat JSON round-trips, presence without values, verifiedAt only on pass")
 print("PASS  memoization verified: nothing re-read")
+
+// New monitoring metadata must survive the hourly presence stamp and JSON rewrite.
+let remoteJSON = #"{"keys":[{"name":"remote","kind":"reference","reference":"GitHub","remoteChecks":[{"repository":"owner/repo","secrets":["TOKEN"],"workflow":"credential-health.yml","job":"railway"}],"localCheck":{"provider":"chrome","clientFile":"~/client.json","options":{"CWS_ITEM_ID":"item"}}}]}"#
+do {
+    let decoded = try JSONDecoder().decode(KeyRegister.self, from: Data(remoteJSON.utf8))
+    let encoded = try JSONEncoder().encode(decoded)
+    let roundTrip = try JSONDecoder().decode(KeyRegister.self, from: encoded)
+    guard roundTrip == decoded, roundTrip.keys[0].remoteChecks?.first?.job == "railway" else {
+        fail("credential check metadata must survive rewriting the register")
+    }
+    let bad = KeyAuthentication(label: "remote", state: "invalid", detail: "Credential rejected", checkedAt: "2026-09-24T00:00:00Z")
+    let status = KeyStatus(entry: decoded.keys[0], presence: .present, authentication: [bad])
+    guard Keys.line(status, now: keysNow).contains("auth failed"), Keys.summary([status]).contains("need attention") else {
+        fail("a present but invalid credential must not look healthy")
+    }
+} catch { fail("credential metadata: \(error)") }
+print("ok    credential monitoring: configuration round-trip and invalid-but-present warning")

@@ -521,7 +521,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: API keys
 
-    private func refreshKeys(force: Bool) {
+    private func refreshKeys(force: Bool, localAuthentication: Bool = false) {
         guard !keyCheckInFlight else { return }
         if !force, let keyCheckedAt, Date().timeIntervalSince(keyCheckedAt) < 600 { return }
         switch KeyRegisterStore.load() {
@@ -542,14 +542,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             keyCheckInFlight = true
             let home = FileManager.default.homeDirectoryForCurrentUser
             Task { [weak self] in
-                let statuses = await Self.checkKeys(register, home: home)
+                let statuses = await Self.checkKeys(register, home: home, localAuthentication: localAuthentication)
                 self?.finishKeys(register, statuses: statuses)
             }
         }
     }
 
-    nonisolated private static func checkKeys(_ register: KeyRegister, home: URL) async -> [KeyStatus] {
-        KeyChecks.check(register, home: home)
+    nonisolated private static func checkKeys(_ register: KeyRegister, home: URL, localAuthentication: Bool) async -> [KeyStatus] {
+        KeyChecks.check(register, home: home, localAuthentication: localAuthentication)
     }
 
     /// Stamps `verifiedAt` on entries that passed, at most once an hour so
@@ -564,11 +564,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var stamped = register
         if stale {
             stamped = Keys.stamped(register, statuses: statuses, now: now)
-            try? KeyRegisterStore.save(stamped)
+            if case let .success(latest?) = KeyRegisterStore.load(), latest == register {
+                try? KeyRegisterStore.save(stamped)
+            }
+        }
+        for status in statuses where status.authentication.contains(where: { $0.failed }) {
+            if !keyStatuses.contains(where: { $0.entry.name == status.entry.name && $0.authentication.contains(where: { $0.failed }) }) {
+                Notifier.deliver(ClaudeAlert(title: "Vitals credential check", message: "\(status.entry.name): authentication needs attention. Open API keys for details."))
+            }
         }
         keyRegister = stamped
         keyStatuses = statuses.map { status in
-            KeyStatus(entry: stamped.keys.first { $0.name == status.entry.name } ?? status.entry, presence: status.presence)
+            KeyStatus(entry: stamped.keys.first { $0.name == status.entry.name } ?? status.entry, presence: status.presence, authentication: status.entry.localCheck?.provider == "claude"
+                      ? keyStatuses.first(where: { $0.entry.name == status.entry.name })?.authentication ?? status.authentication
+                      : status.authentication)
         }
         updateKeysItem()
     }
@@ -585,14 +594,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let summary = keyRegisterError ?? (keyRegister == nil ? "no keys.json yet" : Keys.summary(keyStatuses))
         let title = "API keys · \(summary)"
         let color: NSColor = keyRegisterError != nil ? Palette.coral
-            : keyStatuses.contains { $0.presence == .missing } ? Palette.amber
+            : keyStatuses.contains { $0.presence == .missing || $0.authentication.contains { $0.needsAttention } } ? Palette.amber
             : Palette.primary
         keysItem.title = title
         keysItem.attributedTitle = NSAttributedString(
             string: title,
             attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: color]
         )
-        keysItem.toolTip = "Where each secret lives and how to reach it. Presence only: values are never read, shown or copied. \(KeyRegisterStore.url().path)"
+        keysItem.toolTip = "Credential presence and authentication results. Remote values stay in GitHub; local authentication is tested on request. \(KeyRegisterStore.url().path)"
         keysItem.submenu = keysSubmenu()
     }
 
@@ -613,16 +622,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 row.target = self
                 row.representedObject = entry.url
                 row.isEnabled = entry.url != nil
-                let color: NSColor = switch status.presence {
+                let baseColor: NSColor = switch status.presence {
                 case .present: Palette.mint
                 case .missing: Palette.coral
                 case .unchecked: Palette.secondary
                 }
+                let color = status.authentication.contains { $0.needsAttention } ? Palette.amber : baseColor
                 row.attributedTitle = NSAttributedString(
                     string: line,
                     attributes: [.font: NSFont.systemFont(ofSize: 12.5, weight: .medium), .foregroundColor: color]
                 )
-                row.toolTip = [entry.note, entry.url.map { "Click opens \($0)" }].compactMap { $0 }.joined(separator: "\n")
+                row.toolTip = [entry.note, entry.url.map { "Click opens \($0)" }, status.authentication.map(\.line).joined(separator: "\n")].compactMap { $0 }.joined(separator: "\n")
                 submenu.addItem(row)
             }
             if keyStatuses.isEmpty, keyRegisterError == nil {
@@ -637,8 +647,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         recheck.target = self
         submenu.addItem(recheck)
         submenu.addItem(.separator())
-        submenu.addItem(label("Presence only: Keychain metadata via security without -w, env vars from the"))
-        submenu.addItem(label("zsh rc files, files by size. Values are never read, shown or copied."))
+        let test = NSMenuItem(title: "Test local credentials", action: #selector(testLocalKeys), keyEquivalent: "")
+        test.target = self
+        submenu.addItem(test)
+        submenu.addItem(label("Presence and authentication are separate. Hover a key for each result and time."))
+        submenu.addItem(label("Remote values stay in GitHub. Local tests read credentials only on request."))
         submenu.addItem(label("Agents: `vitals keys` prints this list, `vitals keys init` writes the example."))
         return submenu
     }
@@ -653,6 +666,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             try? KeyRegisterStore.save(KeyRegister.example)
         }
         NSWorkspace.shared.open(KeyRegisterStore.url())
+    }
+
+    @objc private func testLocalKeys() {
+        refreshKeys(force: true, localAuthentication: true)
     }
 
     @objc private func recheckKeys() {
@@ -819,8 +836,25 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 self.claudeUsageSuspended = true
             }
             self.claudeRefreshInFlight = false
+            self.updateClaudeKeyAuthentication(snapshot)
             self.applyClaude(snapshot.keepingUsage(from: self.claudeSnapshot))
         }
+    }
+
+    private func updateClaudeKeyAuthentication(_ snapshot: ClaudeTelemetrySnapshot) {
+        let state: String
+        switch snapshot.usage {
+        case .available: state = "valid"
+        case .accessDenied: state = "unavailable"
+        case .unavailable: state = "unavailable"
+        }
+        let check = KeyAuthentication(label: "local Claude", state: state, detail: "Existing Claude usage check",
+                                      checkedAt: ISO8601DateFormatter().string(from: snapshot.capturedAt))
+        keyStatuses = keyStatuses.map { status in
+            guard status.entry.localCheck?.provider == "claude" else { return status }
+            return KeyStatus(entry: status.entry, presence: status.presence, authentication: [check])
+        }
+        updateKeysItem()
     }
 
     private func applyClaude(_ snapshot: ClaudeTelemetrySnapshot) {

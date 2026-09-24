@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .target(name: "VitalsCore"),
-        .target(name: "VitalsKernel", dependencies: ["VitalsCore"]),
+        .target(name: "VitalsKernel", dependencies: ["VitalsCore"], resources: [.copy("credential_health.py")]),
         .target(
             name: "VitalsClaude",
             linkerSettings: [.linkedFramework("Security")]

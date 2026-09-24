@@ -137,10 +137,11 @@ case "keys":
     case .success(nil):
         Printer.out("register  none · run `vitals keys init` to create \(url.path)")
     case let .success(register?):
-        let statuses = KeyChecks.check(register)
+        let statuses = KeyChecks.check(register, localAuthentication: arguments.dropFirst().first == "check")
         Printer.out("register  \(url.path) · \(Keys.summary(statuses))")
         for status in statuses {
             Printer.out("key       \(Keys.line(status, now: Date()))")
+            for check in status.authentication { Printer.out("          \(check.line)") }
             if let note = status.entry.note { Printer.out("          \(note)") }
             if let link = status.entry.url { Printer.out("          \(link)") }
         }

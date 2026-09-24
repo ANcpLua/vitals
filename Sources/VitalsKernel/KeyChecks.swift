@@ -66,8 +66,37 @@ public enum KeyChecks {
         }
     }
 
-    public static func check(_ register: KeyRegister, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [KeyStatus] {
-        register.keys.map { KeyStatus(entry: $0, presence: presence(of: $0.storage, home: home)) }
+    public static func check(_ register: KeyRegister, home: URL = FileManager.default.homeDirectoryForCurrentUser, localAuthentication: Bool = false) -> [KeyStatus] {
+        let remote = authentication(home: home, local: localAuthentication)
+        return register.keys.map { entry in
+            let check = remote[entry.name]
+            let localPresence = presence(of: entry.storage, home: home)
+            return KeyStatus(entry: entry, presence: check?.presence.flatMap(KeyPresence.init(rawValue:)) ?? localPresence,
+                             authentication: check?.checks ?? (entry.remoteChecks?.isEmpty == false || entry.localCheck != nil
+                                ? [KeyAuthentication(label: "credential check", state: "unavailable", detail: "Check helper unavailable", checkedAt: "")] : []))
+        }
+    }
+
+    private struct AuthenticationResult: Decodable {
+        let checks: [KeyAuthentication]
+        let presence: String?
+    }
+
+    private static func authentication(home: URL, local: Bool) -> [String: AuthenticationResult] {
+        let script = Bundle.module.url(forResource: "credential_health", withExtension: "py")!
+        let python = home.appendingPathComponent(".local/bin/pytools").path
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: FileManager.default.isExecutableFile(atPath: python) ? python : "/usr/bin/python3")
+        process.arguments = [script.path, "--registry", KeyRegisterStore.url(home: home).path] + (local ? ["--local"] : [])
+        process.standardError = FileHandle.nullDevice
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        do { try process.run() } catch { return [:] }
+        // Drain while running so a full pipe cannot deadlock the child.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return [:] }
+        return (try? JSONDecoder().decode([String: AuthenticationResult].self, from: data)) ?? [:]
     }
 
     private static func run(_ path: String, _ arguments: [String]) -> Int32 {

@@ -2,6 +2,38 @@ import Foundation
 
 /// One registered secret: where it lives and how to get at it, never the
 /// value. The register is an index for the user and for agents, not a vault.
+public struct RemoteKeyCheck: Codable, Equatable, Sendable {
+    public let repository: String
+    public let secrets: [String]
+    public let workflow: String
+    public let job: String
+}
+
+public struct LocalKeyCheck: Codable, Equatable, Sendable {
+    public let provider: String
+    public let envFile: String?
+    public let clientFile: String?
+    public let refreshFile: String?
+    public let keychainService: String?
+    public let options: [String: String]?
+}
+
+public struct KeyAuthentication: Codable, Equatable, Sendable {
+    public let label: String
+    public let state: String
+    public let detail: String
+    public let checkedAt: String
+    public let url: String?
+
+    public init(label: String, state: String, detail: String, checkedAt: String, url: String? = nil) {
+        self.label = label; self.state = state; self.detail = detail; self.checkedAt = checkedAt; self.url = url
+    }
+
+    public var failed: Bool { ["invalid", "missing", "scopeMismatch"].contains(state) }
+    public var needsAttention: Bool { state != "valid" }
+    public var line: String { "\(label): \(state) · \(detail) · \(checkedAt)" }
+}
+
 public struct KeyEntry: Codable, Equatable, Sendable, Identifiable {
     public enum Storage: Equatable, Sendable {
         /// `security find-generic-password -s service [-a account]`.
@@ -23,6 +55,8 @@ public struct KeyEntry: Codable, Equatable, Sendable, Identifiable {
     public let note: String?
     /// Last time the presence check passed. Written back by Vitals.
     public var verifiedAt: Date?
+    public var remoteChecks: [RemoteKeyCheck]?
+    public var localCheck: LocalKeyCheck?
 
     public var id: String { name }
 
@@ -37,7 +71,7 @@ public struct KeyEntry: Codable, Equatable, Sendable, Identifiable {
     // Flat JSON, easy to edit by hand:
     // {"name": "reactbits", "kind": "keychain", "service": "reactbits", "account": "ancplua", "url": "...", "note": "..."}
     private enum CodingKeys: String, CodingKey {
-        case name, kind, service, account, variable, path, reference, url, note, verifiedAt
+        case name, kind, service, account, variable, path, reference, url, note, verifiedAt, remoteChecks, localCheck
     }
 
     public init(from decoder: Decoder) throws {
@@ -46,6 +80,8 @@ public struct KeyEntry: Codable, Equatable, Sendable, Identifiable {
         url = try container.decodeIfPresent(String.self, forKey: .url)
         note = try container.decodeIfPresent(String.self, forKey: .note)
         verifiedAt = try container.decodeIfPresent(Date.self, forKey: .verifiedAt)
+        remoteChecks = try container.decodeIfPresent([RemoteKeyCheck].self, forKey: .remoteChecks)
+        localCheck = try container.decodeIfPresent(LocalKeyCheck.self, forKey: .localCheck)
         switch try container.decode(String.self, forKey: .kind) {
         case "keychain":
             storage = .keychain(
@@ -84,6 +120,8 @@ public struct KeyEntry: Codable, Equatable, Sendable, Identifiable {
         try container.encodeIfPresent(url, forKey: .url)
         try container.encodeIfPresent(note, forKey: .note)
         try container.encodeIfPresent(verifiedAt, forKey: .verifiedAt)
+        try container.encodeIfPresent(remoteChecks, forKey: .remoteChecks)
+        try container.encodeIfPresent(localCheck, forKey: .localCheck)
     }
 }
 
@@ -123,10 +161,12 @@ public enum KeyPresence: String, Sendable, Codable {
 public struct KeyStatus: Equatable, Sendable {
     public let entry: KeyEntry
     public let presence: KeyPresence
+    public let authentication: [KeyAuthentication]
 
-    public init(entry: KeyEntry, presence: KeyPresence) {
+    public init(entry: KeyEntry, presence: KeyPresence, authentication: [KeyAuthentication] = []) {
         self.entry = entry
         self.presence = presence
+        self.authentication = authentication
     }
 }
 
@@ -148,11 +188,18 @@ public enum Keys {
         let missing = statuses.filter { $0.presence == .missing }.count
         if present > 0 { parts.append("\(present) present") }
         if missing > 0 { parts.append("\(missing) missing") }
+        let attention = statuses.filter { $0.authentication.contains { $0.needsAttention } }.count
+        if attention > 0 { parts.append("\(attention) need attention") }
         return parts.joined(separator: " · ")
     }
 
     public static func line(_ status: KeyStatus, now: Date) -> String {
         var parts = [status.entry.name, describe(status.entry.storage), status.presence.rawValue]
+        if !status.authentication.isEmpty {
+            let failed = status.authentication.filter { $0.failed }.count
+            let passed = status.authentication.filter { $0.state == "valid" }.count
+            parts.append(failed > 0 ? "auth failed" : passed == status.authentication.count ? "auth passed" : "auth needs checking")
+        }
         if let verified = status.entry.verifiedAt {
             let minutes = Int(now.timeIntervalSince(verified) / 60)
             parts.append(minutes < 1 ? "verified just now" : minutes < 60 ? "verified \(minutes)m ago" : minutes < 1_440 ? "verified \(minutes / 60)h ago" : "verified \(minutes / 1_440)d ago")
