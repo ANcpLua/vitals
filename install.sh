@@ -46,6 +46,7 @@ if kept == groups:
     sys.exit(0)
 hooks["PreToolUse"] = kept
 tmp = path + ".tmp"
+os.makedirs(os.path.dirname(path), exist_ok=True)
 with open(tmp, "w") as f:
     json.dump(settings, f, indent=2)
     f.write("\n")

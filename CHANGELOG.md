@@ -5,6 +5,8 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
 ## Unreleased
 
 ### Added
+- Fresh-agent setup and recovery guide, an ANcpLua registry template containing
+  configuration only, and installer support for a Mac without a `.claude` directory.
 - Versioned credential-registry JSON schema and validated owner-only recovery copy;
   explicit recovery preserves damaged files. Existing entries appear immediately
   during checks, read errors stay visible, and example creation cannot reset a registry.

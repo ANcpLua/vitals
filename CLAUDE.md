@@ -2,8 +2,12 @@
 
 Native Swift macOS menu-bar app. Repository https://github.com/ANcpLua/vitals,
 standalone since 2026-09-05 (before: `tools/vitals` in ANcpLua/human-plugins).
-Local clone: `~/repo-playground/vitals`. Installed copy: `~/Applications/Vitals.app`,
+Local clone: `~/Developer/vitals`. Installed copy: `~/Applications/Vitals.app`,
 LaunchAgent `dev.ancplua.vitals`.
+
+For a new Mac, an empty registry, reinstalling, lost configuration, or setting up
+credential monitoring, follow [docs/agent-setup.md](docs/agent-setup.md). This is
+the setup and recovery procedure; it does not depend on previous chat context.
 
 ## Commands
 
@@ -12,13 +16,18 @@ bash pack.sh build                                  # Vitals.app in ./build, ad-
 build/swift/release/selftest                        # kernel + core (pure policy, IOKit, signals, clipboard, keys)
 build/swift/release/claude-selftest                 # telemetry parsing, alerts, transcripts, spawn log
 build/swift/release/mcp-selftest
+build/Vitals.app/Contents/MacOS/vitals keys-menu-selftest # loading state and existing Claude authentication
+python3 scripts/test_credential_health.py
+python3 scripts/test_install_hook.py
 ./install.sh                                        # build, copy to ~/Applications, (re)start the agent, register the hook
 build/swift/release/vitals snapshot|claude|burn|keys|mcp|awake     # headless views, no menu needed
 ```
 
-CI (`.github/workflows/ci.yml`, macos-15) runs exactly these plus `plutil -lint`
-and `codesign --verify`. A change is done when all three selftests pass locally,
-`./install.sh` ran, CHANGELOG has a line, the commit is pushed and CI is green.
+CI (`.github/workflows/ci.yml`, macos-15) is the check list. For runtime or installer
+changes, run its relevant tests locally and `./install.sh`; add a CHANGELOG line,
+push the commit and wait for green CI. For documentation-only changes, verify
+paths, commands and examples against source, push, and wait for CI; reinstalling
+an unchanged binary is unnecessary.
 
 Toolchain: Command Line Tools only, no Xcode, so no XCTest. Selftests are plain
 executables that `fail()` on the first broken expectation. The CI runner has an
@@ -86,9 +95,15 @@ row and a submenu or their own panel.
   focus; pasting is the user's ⌘V. Hotkey ⌃⇧V through Carbon `RegisterEventHotKey`
   (no Accessibility needed). On the user's Sculpt keyboard ⌃ is the Windows key.
 - **Keys** (`Keys.swift`, `KeyChecks.swift`): `~/.config/vitals/keys.json` is an index
-  of where secrets live, never values. Keychain presence via
-  `security find-generic-password -s` without `-w` (metadata, never prompts, exit
-  44 = missing). Nothing in this feature may read, show or copy a value.
+  of credential locations and check configuration. Presence uses Keychain metadata,
+  file size, or environment definitions. Authentication is separate: background
+  checks read GitHub secret metadata and workflow evidence; local secret values are
+  read only through explicit **Test local credentials** / `vitals keys check`.
+  Auth0 refresh rotation is saved before the subsequent MCP request. Claude reuses
+  its existing usage poll. Values stay out of UI, logs, registry, examples, and Git.
+  Load entries before starting asynchronous checks. Preserve the validated
+  `keys.last-good.json`; `keys restore` is explicit and preserves corrupt originals.
+  See the setup guide for provider formats, remote workflow installation, and recovery.
 - **launchd**: `launchctl bootout` returns before the service is gone; `install.sh`
   polls before `bootstrap`, otherwise bootstrap fails with I/O error 5 and Vitals
   is down.

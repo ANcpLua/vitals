@@ -10,6 +10,7 @@ jobs:
       - uses: actions/checkout@v5
       - run: plutil -lint Info.plist PrivacyInfo.xcprivacy launchd/dev.ancplua.vitals.plist
       - run: python3 scripts/test_credential_health.py
+      - run: python3 scripts/test_install_hook.py
       - run: bash pack.sh build
       - run: swift run --scratch-path build/swift -c release selftest
       - run: swift run --scratch-path build/swift -c release claude-selftest

@@ -1,0 +1,226 @@
+{
+  "$schema": "../schema/keys.schema.json",
+  "keys": [
+    {
+      "kind": "keychain",
+      "localCheck": {
+        "provider": "claude"
+      },
+      "name": "Claude Code OAuth",
+      "service": "Claude Code-credentials"
+    },
+    {
+      "kind": "reference",
+      "name": "GitHub RELEASE_TOKEN",
+      "reference": "GitHub Actions secret RELEASE_TOKEN in ANcpLua/Qyl.OpenTelemetry.AutoInstrumentation and ANcpLua/Qyl.OpenTelemetry.SemanticConventions",
+      "remoteChecks": [
+        {
+          "job": "github",
+          "repository": "ANcpLua/Qyl.OpenTelemetry.AutoInstrumentation",
+          "secrets": [
+            "RELEASE_TOKEN"
+          ],
+          "workflow": "credential-health.yml"
+        },
+        {
+          "job": "github",
+          "repository": "ANcpLua/Qyl.OpenTelemetry.SemanticConventions",
+          "secrets": [
+            "RELEASE_TOKEN"
+          ],
+          "workflow": "credential-health.yml"
+        }
+      ]
+    },
+    {
+      "kind": "reference",
+      "name": "Railway RAILWAY_TOKEN (qyl / production)",
+      "reference": "GitHub Actions secret RAILWAY_TOKEN in ANcpLua/qyl.mcp",
+      "remoteChecks": [
+        {
+          "job": "railway",
+          "repository": "ANcpLua/qyl.mcp",
+          "secrets": [
+            "RAILWAY_TOKEN"
+          ],
+          "workflow": "credential-health.yml"
+        }
+      ]
+    },
+    {
+      "kind": "file",
+      "localCheck": {
+        "envFile": "~/.config/vitals/store-secrets.env",
+        "options": {
+          "EDGE_OPERATION_ID": "899b2074-4ad5-496f-861a-b08b7b3e54f4",
+          "EDGE_PRODUCT_ID": "214e0682-5cde-4319-9608-ed25de6643b7"
+        },
+        "provider": "edge"
+      },
+      "name": "Browser store credentials (Edge + Firefox AMO)",
+      "path": "~/.config/vitals/store-secrets.env",
+      "remoteChecks": [
+        {
+          "job": "edge",
+          "repository": "ANcpLua/save-media",
+          "secrets": [
+            "EDGE_CLIENT_ID",
+            "EDGE_API_KEY"
+          ],
+          "workflow": "credential-health.yml"
+        },
+        {
+          "job": "edge",
+          "repository": "ANcpLua/yt-transcript",
+          "secrets": [
+            "EDGE_CLIENT_ID",
+            "EDGE_API_KEY"
+          ],
+          "workflow": "credential-health.yml"
+        }
+      ]
+    },
+    {
+      "kind": "file",
+      "localCheck": {
+        "clientFile": "~/.config/vitals/cws-client.json",
+        "provider": "chrome",
+        "refreshFile": "~/.config/vitals/cws-refresh-token.txt"
+      },
+      "name": "Chrome Web Store OAuth client",
+      "path": "~/.config/vitals/cws-client.json",
+      "remoteChecks": [
+        {
+          "job": "chrome",
+          "repository": "ANcpLua/save-media",
+          "secrets": [
+            "CWS_CLIENT_ID",
+            "CWS_CLIENT_SECRET",
+            "CWS_REFRESH_TOKEN",
+            "CWS_PUBLISHER_ID"
+          ],
+          "workflow": "credential-health.yml"
+        },
+        {
+          "job": "chrome",
+          "repository": "ANcpLua/yt-transcript",
+          "secrets": [
+            "CWS_CLIENT_ID",
+            "CWS_CLIENT_SECRET",
+            "CWS_REFRESH_TOKEN",
+            "CWS_PUBLISHER_ID"
+          ],
+          "workflow": "credential-health.yml"
+        }
+      ]
+    },
+    {
+      "kind": "file",
+      "localCheck": {
+        "clientFile": "~/.config/vitals/cws-client.json",
+        "provider": "chrome",
+        "refreshFile": "~/.config/vitals/cws-refresh-token.txt"
+      },
+      "name": "Chrome Web Store refresh token",
+      "path": "~/.config/vitals/cws-refresh-token.txt",
+      "remoteChecks": [
+        {
+          "job": "chrome",
+          "repository": "ANcpLua/save-media",
+          "secrets": [
+            "CWS_CLIENT_ID",
+            "CWS_CLIENT_SECRET",
+            "CWS_REFRESH_TOKEN",
+            "CWS_PUBLISHER_ID"
+          ],
+          "workflow": "credential-health.yml"
+        },
+        {
+          "job": "chrome",
+          "repository": "ANcpLua/yt-transcript",
+          "secrets": [
+            "CWS_CLIENT_ID",
+            "CWS_CLIENT_SECRET",
+            "CWS_REFRESH_TOKEN",
+            "CWS_PUBLISHER_ID"
+          ],
+          "workflow": "credential-health.yml"
+        }
+      ]
+    },
+    {
+      "kind": "keychain",
+      "localCheck": {
+        "provider": "auth0"
+      },
+      "name": "qyl hosted MCP refresh token",
+      "service": "qyl-mcp-hosted-refresh"
+    },
+    {
+      "kind": "keychain",
+      "localCheck": {
+        "provider": "auth0"
+      },
+      "name": "qyl hosted MCP client id",
+      "service": "qyl-mcp-hosted-client-id"
+    },
+    {
+      "kind": "keychain",
+      "localCheck": {
+        "keychainService": "AMO API (addons.mozilla.org)",
+        "provider": "amo"
+      },
+      "name": "AMO API",
+      "remoteChecks": [
+        {
+          "job": "amo",
+          "repository": "ANcpLua/save-media",
+          "secrets": [
+            "AMO_JWT_ISSUER",
+            "AMO_JWT_SECRET"
+          ],
+          "workflow": "credential-health.yml"
+        },
+        {
+          "job": "amo",
+          "repository": "ANcpLua/yt-transcript",
+          "secrets": [
+            "AMO_JWT_ISSUER",
+            "AMO_JWT_SECRET"
+          ],
+          "workflow": "credential-health.yml"
+        }
+      ],
+      "service": "AMO API (addons.mozilla.org)"
+    },
+    {
+      "kind": "file",
+      "localCheck": {
+        "envFile": "~/.config/vitals/store-secrets.env",
+        "provider": "amo"
+      },
+      "name": "Firefox AMO credentials in publishing file",
+      "path": "~/.config/vitals/store-secrets.env",
+      "remoteChecks": [
+        {
+          "job": "amo",
+          "repository": "ANcpLua/save-media",
+          "secrets": [
+            "AMO_JWT_ISSUER",
+            "AMO_JWT_SECRET"
+          ],
+          "workflow": "credential-health.yml"
+        },
+        {
+          "job": "amo",
+          "repository": "ANcpLua/yt-transcript",
+          "secrets": [
+            "AMO_JWT_ISSUER",
+            "AMO_JWT_SECRET"
+          ],
+          "workflow": "credential-health.yml"
+        }
+      ]
+    }
+  ]
+}
