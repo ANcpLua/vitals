@@ -129,6 +129,9 @@ registry look missing. **Open keys.json** only opens the file and cannot reset i
 
 ## Install
 
+Agents setting up a new Mac or rebuilding lost configuration: start with
+[AGENTS.md](AGENTS.md) and follow [the setup guide](docs/agent-setup.md).
+
 ```bash
 ./install.sh
 ```
