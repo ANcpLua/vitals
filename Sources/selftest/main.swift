@@ -429,7 +429,7 @@ let stampedRegister = Keys.stamped(KeyRegister.example, statuses: keyStatuses, n
 guard stampedRegister.keys[0].verifiedAt == keysNow, stampedRegister.keys[1].verifiedAt == nil else {
     fail("only entries that passed get a verifiedAt stamp")
 }
-guard Keys.line(KeyStatus(entry: stampedRegister.keys[0], presence: .present), now: keysNow.addingTimeInterval(120)) == "Claude Code OAuth · keychain Claude Code-credentials · present · verified 2m ago" else {
+guard Keys.line(KeyStatus(entry: stampedRegister.keys[0], presence: .present), now: keysNow.addingTimeInterval(120)) == "Claude Code OAuth · keychain Claude Code-credentials · present · presence checked 2m ago" else {
     fail("key line: \(Keys.line(KeyStatus(entry: stampedRegister.keys[0], presence: .present), now: keysNow.addingTimeInterval(120)))")
 }
 print("ok    key register: flat JSON round-trips, presence without values, verifiedAt only on pass")

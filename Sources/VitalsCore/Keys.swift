@@ -31,7 +31,7 @@ public struct KeyAuthentication: Codable, Equatable, Sendable {
 
     public var failed: Bool { ["invalid", "missing", "scopeMismatch"].contains(state) }
     public var needsAttention: Bool { state != "valid" }
-    public var line: String { "\(label): \(state) · \(detail) · \(checkedAt)" }
+    public var line: String { "\(label): \(state) · \(detail) · \(checkedAt)" + (url.map { " · \($0)" } ?? "") }
 }
 
 public struct KeyEntry: Codable, Equatable, Sendable, Identifiable {
@@ -202,7 +202,7 @@ public enum Keys {
         }
         if let verified = status.entry.verifiedAt {
             let minutes = Int(now.timeIntervalSince(verified) / 60)
-            parts.append(minutes < 1 ? "verified just now" : minutes < 60 ? "verified \(minutes)m ago" : minutes < 1_440 ? "verified \(minutes / 60)h ago" : "verified \(minutes / 1_440)d ago")
+            parts.append(minutes < 1 ? "presence checked just now" : minutes < 60 ? "presence checked \(minutes)m ago" : minutes < 1_440 ? "presence checked \(minutes / 60)h ago" : "presence checked \(minutes / 1_440)d ago")
         }
         return parts.joined(separator: " · ")
     }
