@@ -39,8 +39,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 class ProbeError(Exception):
-    def __init__(self, state):
+    def __init__(self, state, detail=""):
         self.state = state
+        self.detail = detail
 
 def request(url, headers=None, body=None, form=False):
     headers = dict(headers or {})
@@ -58,7 +59,7 @@ def request(url, headers=None, body=None, form=False):
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as error:
         if error.code in (401, 403):
-            raise ProbeError('invalid') from None
+            raise ProbeError('invalid', 'Provider rejected authentication (HTTP ' + str(error.code) + ')') from None
         if error.code == 400:
             try:
                 code = json.loads(error.read(8192)).get('error')
@@ -66,7 +67,7 @@ def request(url, headers=None, body=None, form=False):
                     raise ProbeError('invalid')
             except (ValueError, TypeError):
                 pass
-        raise ProbeError('unavailable') from None
+        raise ProbeError('unavailable', 'Provider check returned HTTP ' + str(error.code)) from None
     except (OSError, ValueError):
         raise ProbeError('unavailable') from None
 
@@ -145,16 +146,19 @@ def probe(provider, env):
             if not access:
                 raise ProbeError('invalid')
             response = request('https://mcp.qyl.at/mcp', {
-                'Authorization': 'Bearer ' + access, 'Accept': 'application/json, text/event-stream'},
-                {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
-                    'protocolVersion': '2025-03-26', 'capabilities': {}, 'clientInfo': {'name': 'vitals-health', 'version': '1'}}})
+                'Authorization': 'Bearer ' + access, 'Accept': 'application/json, text/event-stream',
+                'MCP-Protocol-Version': env.get('MCP_PROTOCOL_VERSION', '2026-07-28'), 'Mcp-Method': 'server/discover'},
+                {'jsonrpc': '2.0', 'id': 1, 'method': 'server/discover', 'params': {'_meta': {
+                    'io.modelcontextprotocol/protocolVersion': env.get('MCP_PROTOCOL_VERSION', '2026-07-28'),
+                    'io.modelcontextprotocol/clientInfo': {'name': 'vitals-health', 'version': '1'},
+                    'io.modelcontextprotocol/clientCapabilities': {}}}})
             if not response.get('result'):
                 raise ProbeError('unavailable')
         else:
             return result('unchecked', 'No authentication probe configured')
         return result('valid', 'Read-only authentication check passed')
     except ProbeError as error:
-        return result(error.state, {'invalid': 'Credential rejected', 'missing': 'Required credential is absent',
+        return result(error.state, error.detail or {'invalid': 'Credential rejected', 'missing': 'Required credential is absent',
                                    'unavailable': 'Provider or network check unavailable', 'unchecked': 'Check configuration incomplete'}[error.state])
     except Exception:
         # Never expose exception text: libraries may embed a request, header or provider response.

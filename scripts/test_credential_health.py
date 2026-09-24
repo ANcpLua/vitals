@@ -60,6 +60,11 @@ class HealthTests(unittest.TestCase):
         events = []
         def request(url, *args, **kwargs):
             events.append('refresh' if url.endswith('/oauth/token') else 'mcp')
+            if not url.endswith('/oauth/token'):
+                headers, body = args
+                self.assertEqual(headers['Mcp-Method'], 'server/discover')
+                self.assertEqual(body['method'], 'server/discover')
+                self.assertEqual(body['params']['_meta']['io.modelcontextprotocol/protocolVersion'], headers['MCP-Protocol-Version'])
             return {'access_token': 'access', 'refresh_token': 'rotated'} if url.endswith('/oauth/token') else {'result': { 'serverInfo': {} }}
         with patch.object(h, 'request', side_effect=request), patch.object(h, 'write_keychain', side_effect=lambda *a: events.append('save')):
             self.assertEqual(h.probe('auth0', {'MCP_REFRESH_TOKEN': 'old', 'MCP_CLIENT_ID': 'client'})['state'], 'valid')

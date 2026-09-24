@@ -91,7 +91,7 @@ Chrome checks OAuth and item access; AMO checks the authenticated profile. Edge
 requires a real previous publishing operation: a 404 is not authentication proof.
 Local Chrome checks without a publisher ID establish OAuth and Web Store scope
 only. Hosted MCP checks exchange the Auth0 refresh token, save a rotated token
-back to the same Keychain item, then initialize the authenticated MCP session.
+back to the same Keychain item, then call authenticated `server/discover` at the hosted MCP revision.
 These checks do not upload, publish, deploy, or pay invoices. Unexpected revocation
 can still happen between checks; monitoring detects failure rather than preventing it.
 
