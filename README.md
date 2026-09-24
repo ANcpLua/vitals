@@ -45,14 +45,60 @@ from local files only.
 
 ## API keys
 
-`~/.config/vitals/keys.json` is an index of where secrets live, never of
-their values: name, storage (`keychain` service and account, `environment`
-variable, `file` path, or a `reference` Vitals does not check), the URL
-where a key is created or revoked, a note for agents, and when the presence
-check last passed. The menu row shows the counts; the submenu lists the
-entries, opens the file, or re-checks. `vitals keys` prints the same for an
-agent, `vitals keys init` writes an example. A CLAUDE.md line such as "run
-`vitals keys` before asking for a credential" is the whole integration.
+`~/.config/vitals/keys.json` indexes credential locations, never their values.
+Presence and authentication are separate. A file or GitHub secret can exist while
+its credential is expired, revoked, or scoped to the wrong resource.
+
+- `vitals keys` checks local presence, GitHub secret metadata, and recent
+  credential-health workflow results. The menu refreshes these every ten minutes.
+- `vitals keys check`, or **API keys > Test local credentials**, also performs
+  the configured local read-only provider checks. Local credential values are
+  read only for this explicit action, stay in memory, and are never printed.
+- **Re-check now** refreshes metadata and remote results without reading local
+  secret values or dispatching workflows. Hover an entry for individual results,
+  timestamps, and workflow links. New credential failures trigger a notification.
+- Local authentication results expire after 24 hours. Remote results also expire
+  after 24 hours, and a secret updated after a run immediately makes that run stale.
+  Network errors, missing access, skipped jobs, and unconfigured probes never count
+  as authenticated. Claude uses its existing usage poll, without another request.
+
+Optional entry fields configure checks:
+
+```json
+{
+  "name": "Production Railway",
+  "kind": "reference",
+  "reference": "GitHub Actions secret RAILWAY_TOKEN in owner/repo",
+  "remoteChecks": [{
+    "repository": "owner/repo",
+    "secrets": ["RAILWAY_TOKEN"],
+    "workflow": "credential-health.yml",
+    "job": "railway"
+  }]
+}
+```
+
+Local checks use `localCheck` with a `provider` (`chrome`, `amo`, `edge`,
+`auth0`, or `claude`), credential paths (`envFile`, `clientFile`, `refreshFile`),
+an AMO `keychainService`, and non-secret `options`. Existing entries still load.
+The probe uses only Python's standard library, preferring `~/.local/bin/pytools`
+and otherwise the Command Line Tools Python. It is bundled with the app.
+
+The read-only remote workflow runs on a six-hour schedule and on demand, with
+secret values available only to its probe step. Railway checks exact project and
+environment IDs. GitHub release credentials must have repository write permission.
+Chrome checks OAuth and item access; AMO checks the authenticated profile. Edge
+requires a real previous publishing operation: a 404 is not authentication proof.
+Local Chrome checks without a publisher ID establish OAuth and Web Store scope
+only. Hosted MCP checks exchange the Auth0 refresh token, save a rotated token
+back to the same Keychain item, then initialize the authenticated MCP session.
+These checks do not upload, publish, deploy, or pay invoices. Unexpected revocation
+can still happen between checks; monitoring detects failure rather than preventing it.
+
+The safe result cache is `~/.config/vitals/key-health.json` (owner-only). No secret
+values enter it. GitHub's existing `gh` login needs read access to repository secret
+metadata and Actions runs. Authentication checks return fixed result categories,
+never provider response bodies or credential-bearing exception messages.
 
 ## Install
 

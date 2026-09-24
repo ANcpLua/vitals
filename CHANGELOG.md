@@ -5,6 +5,9 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
 ## Unreleased
 
 ### Added
+- Separate credential presence and authentication monitoring: read-only GitHub
+  metadata and scheduled workflow results, explicit local provider probes, stale
+  and rotated-secret detection, timestamps, and failure notifications.
 - Copied images in the clipboard history. A pasteboard write with no text
   but a PNG or TIFF is normalized to PNG and stored owner-only in
   `~/Library/Application Support/Vitals/clipboard-images`, named by its
