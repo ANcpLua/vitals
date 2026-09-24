@@ -100,6 +100,33 @@ values enter it. GitHub's existing `gh` login needs read access to repository se
 metadata and Actions runs. Authentication checks return fixed result categories,
 never provider response bodies or credential-bearing exception messages.
 
+### Registry format and recovery
+
+The versioned JSON schema is [`schema/keys.schema.json`](schema/keys.schema.json).
+Swift decoding and menu policy live in `Sources/VitalsCore/Keys.swift`, storage and
+recovery in `Sources/VitalsKernel/KeyChecks.swift`, and authentication probes in
+`Sources/VitalsKernel/credential_health.py`. These ship in this Git repository;
+the probe is also bundled with the installed app. Each monitored repository keeps
+its own `.github/workflows/credential-health.yml` independently of this Mac.
+
+Your personal registry is `~/.config/vitals/keys.json`, outside the app and Git
+checkout. After a successful load or save, Vitals keeps a validated, owner-only
+copy at `~/.config/vitals/keys.last-good.json`. Invalid or unreadable files never
+replace that copy. If the registry is deleted or corrupted, choose **Restore saved
+registry**, or run `vitals keys restore`. Recovery preserves a damaged original as
+`keys.damaged-<id>.json` and refuses to replace an already valid registry. `keys init`
+never overwrites an existing file and offers recovery when a saved copy exists.
+
+The recovery copy contains locations and configuration, not credential values.
+It does not replace a backup of Keychain or credential files, and deleting the
+entire configuration directory deletes both registry copies. Include that directory
+in your normal Mac backup. The disposable `key-health.json` cache can be rebuilt
+with **Re-check now** and **Test local credentials**. Reinstalling the app leaves
+the registry and credentials intact.
+
+Entries appear immediately while checks run; a slow check never makes an existing
+registry look missing. **Open keys.json** only opens the file and cannot reset it.
+
 ## Install
 
 ```bash

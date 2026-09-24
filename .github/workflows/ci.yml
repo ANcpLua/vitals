@@ -16,3 +16,4 @@ jobs:
       - run: swift run --scratch-path build/swift -c release mcp-selftest
       - run: codesign --verify --deep --strict build/Vitals.app
       - run: build/Vitals.app/Contents/MacOS/vitals snapshot
+      - run: build/Vitals.app/Contents/MacOS/vitals keys-menu-selftest

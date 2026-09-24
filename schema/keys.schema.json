@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Vitals credential registry",
+  "description": "Credential locations and check configuration only. Never store credential values here.",
+  "type": "object",
+  "required": ["keys"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string"},
+    "keys": {"type": "array", "items": {"$ref": "#/$defs/entry"}}
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["keychain", "environment", "env", "file", "reference"]},
+        "service": {"type": "string"},
+        "account": {"type": "string"},
+        "variable": {"type": "string"},
+        "path": {"type": "string"},
+        "reference": {"type": "string"},
+        "url": {"type": "string"},
+        "note": {"type": "string"},
+        "verifiedAt": {"type": "string", "format": "date-time"},
+        "remoteChecks": {"type": "array", "items": {"$ref": "#/$defs/remoteCheck"}},
+        "localCheck": {"$ref": "#/$defs/localCheck"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "keychain"}}}, "then": {"required": ["service"]}},
+        {"if": {"properties": {"kind": {"enum": ["environment", "env"]}}}, "then": {"required": ["variable"]}},
+        {"if": {"properties": {"kind": {"const": "file"}}}, "then": {"required": ["path"]}},
+        {"if": {"properties": {"kind": {"const": "reference"}}}, "then": {"required": ["reference"]}}
+      ]
+    },
+    "remoteCheck": {
+      "type": "object",
+      "required": ["repository", "secrets", "workflow", "job"],
+      "additionalProperties": false,
+      "properties": {
+        "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+        "secrets": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "workflow": {"type": "string", "minLength": 1},
+        "job": {"type": "string", "minLength": 1}
+      }
+    },
+    "localCheck": {
+      "type": "object",
+      "required": ["provider"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {"enum": ["chrome", "amo", "edge", "auth0", "claude"]},
+        "envFile": {"type": "string"},
+        "clientFile": {"type": "string"},
+        "refreshFile": {"type": "string"},
+        "keychainService": {"type": "string"},
+        "options": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    }
+  }
+}

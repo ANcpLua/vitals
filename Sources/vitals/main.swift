@@ -18,6 +18,15 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 let mode = arguments.first ?? (isatty(FileHandle.standardInput.fileDescriptor) != 0 ? "snapshot" : "bar")
 
 switch mode {
+case "keys-menu-selftest":
+    _ = NSApplication.shared
+    do {
+        try MenuBarController.keysLoadingSelftest()
+        Printer.out("PASS  existing registry stays visible while credential checks run")
+    } catch {
+        Printer.err("FAIL  \(error)")
+        exit(1)
+    }
 case "snapshot":
     switch observe(intervalMicros: 300_000) {
     case let .success(snapshot):
@@ -117,17 +126,22 @@ case "keys":
     // present or missing, when last verified. Never a value.
     // `vitals keys init` writes the example register when none exists.
     let url = KeyRegisterStore.url()
+    if arguments.dropFirst().first == "restore" {
+        do {
+            try KeyRegisterStore.restore(from: url)
+            Printer.out("restored  \(url.path)")
+        } catch {
+            Printer.err("vitals: cannot restore registry: \(error)")
+            exit(1)
+        }
+    }
     if arguments.dropFirst().first == "init" {
-        if FileManager.default.fileExists(atPath: url.path) {
-            Printer.out("exists    \(url.path)")
-        } else {
-            do {
-                try KeyRegisterStore.save(KeyRegister.example)
-                Printer.out("created   \(url.path)")
-            } catch {
-                Printer.err("vitals: cannot write \(url.path): \(error)")
-                exit(1)
-            }
+        do {
+            let created = try KeyRegisterStore.createExampleIfMissing(at: url)
+            Printer.out("\(created ? "created" : "exists")   \(url.path)")
+        } catch {
+            Printer.err("vitals: cannot create \(url.path): \(error)")
+            exit(1)
         }
     }
     switch KeyRegisterStore.load(from: url) {
@@ -135,8 +149,11 @@ case "keys":
         Printer.err("vitals: \(url.path) unreadable: \(error)")
         exit(1)
     case .success(nil):
-        Printer.out("register  none · run `vitals keys init` to create \(url.path)")
+        let action = FileManager.default.fileExists(atPath: KeyRegisterStore.backupURL().path) ? "restore" : "init"
+        Printer.out("register  none · run `vitals keys \(action)` for \(url.path)")
     case let .success(register?):
+        do { try KeyRegisterStore.backup(from: url) }
+        catch { Printer.err("vitals: registry loaded, but recovery copy could not be saved") }
         let statuses = KeyChecks.check(register, localAuthentication: arguments.dropFirst().first == "check")
         Printer.out("register  \(url.path) · \(Keys.summary(statuses))")
         for status in statuses {
@@ -194,6 +211,6 @@ case "bar":
     application.run()
 
 default:
-    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | burn | keys [init] | mcp [refresh] | awake | bar]")
+    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | burn | keys [init|check|restore] | mcp [refresh] | awake | bar]")
     exit(2)
 }
