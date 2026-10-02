@@ -19,7 +19,8 @@ build/swift/release/mcp-selftest
 build/Vitals.app/Contents/MacOS/vitals keys-menu-selftest # loading state and existing Claude authentication
 python3 scripts/test_credential_health.py
 python3 scripts/test_install_hook.py
-./install.sh                                        # build, copy to ~/Applications, (re)start the agent, register the hook
+python3 scripts/test_registry_template.py
+./install.sh                                        # build, copy to ~/Applications, (re)start the agent, register the hook, link the CLI, install the skill, sync the registry template
 build/swift/release/vitals snapshot|claude|burn|keys|mcp|awake     # headless views, no menu needed
 ```
 
@@ -104,6 +105,10 @@ row and a submenu or their own panel.
   Load entries before starting asynchronous checks. Preserve the validated
   `keys.last-good.json`; `keys restore` is explicit and preserves corrupt originals.
   See the setup guide for provider formats, remote workflow installation, and recovery.
+  Agents register credentials in the registry through `skills/vitals-keys/SKILL.md`;
+  edit the skill there, `install.sh` copies it to `~/.claude/skills`. `install.sh` also
+  writes the registry back into `examples/keys.ancplua.json`, so commit that diff
+  with your change and never edit the template by hand.
 - **launchd**: `launchctl bootout` returns before the service is gone; `install.sh`
   polls before `bootstrap`, otherwise bootstrap fails with I/O error 5 and Vitals
   is down.

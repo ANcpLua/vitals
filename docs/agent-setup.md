@@ -31,57 +31,39 @@ launchctl print "gui/$(id -u)/dev.ancplua.vitals"
 
 The installer builds and signs the app, installs the LaunchAgent, and registers
 the bundled `fable-subagent-gate.sh` as a Claude `PreToolUse(Agent)` hook. It creates
-`~/.claude` when absent and preserves unrelated settings and hooks. It leaves
-credential files and registry configuration in place. With the lid closed and
-Stay awake active, use the installer to restart; normal Quit clears the sleep override.
+`~/.claude` when absent and preserves unrelated settings and hooks. It links the CLI
+as `~/.local/bin/vitals`, installs the `vitals-keys` skill into `~/.claude/skills`,
+and runs `scripts/registry_template.py` (step 2). It leaves credential files in
+place. With the lid closed and Stay awake active, use the installer to restart;
+normal Quit clears the sleep override.
 
 Done: the snapshot exits successfully and launchd reports Vitals running.
 
 ## 2. Recover or create the registry
 
-Inspect `~/.config/vitals/keys.json` and `keys.last-good.json` before creating files.
+The registry `~/.config/vitals/keys.json` and its template
+[`../examples/keys.ancplua.json`](../examples/keys.ancplua.json) are one index in two
+places. `./install.sh` keeps them identical through `scripts/registry_template.py`:
 
-| State | Action |
-| --- | --- |
-| Existing valid registry | Retain it; merge only missing entries from the template. |
-| Registry absent or corrupt, valid recovery copy | Run `vitals keys restore` using the installed binary's full path if needed. |
-| Both copies unusable | Preserve them and recover from a Mac backup. If no backup exists, rebuild configuration from the template after setting aside the damaged files. |
-| Neither copy exists | Create the ANcpLua template below, or use `vitals keys init` for a generic two-entry example. |
+| State | What the installer does | Your action |
+| --- | --- | --- |
+| Neither registry nor recovery copy exists | Creates the registry from the template. | None. |
+| Valid registry | Writes it back into the template, without check stamps and with the home directory as `~`. | Review the diff and commit it. |
+| Registry absent or corrupt, valid recovery copy | Nothing. | Run `vitals keys restore`, then `./install.sh` again. |
+| Both copies unusable | Nothing. | Preserve them and recover from a Mac backup. If no backup exists, set the damaged files aside and run `./install.sh`. |
 
-[`../examples/keys.ancplua.json`](../examples/keys.ancplua.json) contains the ten
-configured entries and all nine remote checks across five repositories. It contains
-locations, provider names, repository names and non-secret resource IDs, without
-credential values or historical success claims. Review its repository names and
-resource IDs for the current account; it describes the ANcpLua setup as of
-2026-09-24. The schema is [`../schema/keys.schema.json`](../schema/keys.schema.json).
+The registry is the side agents edit, following the `vitals-keys` skill. The template
+is its copy in Git: locations, provider names, repository names and non-secret
+resource IDs, without credential values or historical success claims. The schema is
+[`../schema/keys.schema.json`](../schema/keys.schema.json). To remove an entry, delete
+it from the registry and run `./install.sh`.
 
-For a completely empty configuration, run this from the checkout. Select the
-Python interpreter described above in place of `python3` when appropriate:
+The first successful `keys` load saves the validated, owner-only recovery copy.
+Missing credentials are expected on a new Mac; presence alone is not authentication.
 
-```bash
-python3 - <<'PY'
-import json, os
-from pathlib import Path
-registry = json.loads(Path('examples/keys.ancplua.json').read_text())
-registry.pop('$schema', None)  # The example's relative editor link is checkout-specific.
-directory = Path.home() / '.config/vitals'
-directory.mkdir(parents=True, exist_ok=True)
-if (directory / 'keys.last-good.json').exists():
-    raise SystemExit('Recovery copy exists: restore it instead.')
-descriptor = os.open(directory / 'keys.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-with os.fdopen(descriptor, 'w') as output:
-    json.dump(registry, output, indent=2)
-    output.write('\n')
-PY
-"$HOME/Applications/Vitals.app/Contents/MacOS/vitals" keys
-```
-
-The exclusive create refuses to overwrite an existing registry. The first
-successful `keys` load saves the validated, owner-only recovery copy. Missing
-credentials are expected on a new Mac; presence alone is not authentication.
-
-Done: all intended entries appear, and `keys.last-good.json` contains the same
-configuration. The template recreates the index, not the credentials.
+Done: `vitals keys` lists every template entry, and `git status` shows the template
+unchanged or its reviewed diff committed. The template recreates the index, not the
+credentials.
 
 ## 3. Restore credentials or complete the provider's login
 

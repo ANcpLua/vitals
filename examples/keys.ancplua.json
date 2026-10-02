@@ -221,6 +221,40 @@
           "workflow": "credential-health.yml"
         }
       ]
+    },
+    {
+      "kind": "file",
+      "name": "Gemini for Diktat Fast",
+      "note": "Encrypted key owned by Diktat Fast. Vitals checks presence only. Run diktat-fast check to verify authentication through Diktat without exposing the key.",
+      "path": "~/Library/Application Support/Diktat Fast/gemini-key.enc",
+      "url": "https://aistudio.google.com/api-keys"
+    },
+    {
+      "kind": "file",
+      "name": "Diktat Fast local app bridge",
+      "note": "Private local bridge for ChatGPT, Claude Desktop, Claude Code, and Ghostty. Run diktat-fast doctor for named setup checks. Vitals checks presence only. Do not copy this token into chats.",
+      "path": "~/Library/Application Support/Diktat Fast/bridge/access-token"
+    },
+    {
+      "kind": "file",
+      "name": "React Bits Pro license (Ultimate)",
+      "note": "Use as REACTBITS_LICENSE_KEY for shadcn @reactbits-starter and @reactbits-pro installs. Do not copy into chats.",
+      "path": "~/.config/vitals/reactbits-license-key",
+      "url": "https://pro.reactbits.dev"
+    },
+    {
+      "kind": "file",
+      "name": "Resend API key (otel.cc sending)",
+      "note": "Use as RESEND_API_KEY. Sending access, restricted to the domain otel.cc. Deployed copy: Railway variable RESEND_API_KEY, project leitwert, service projektaufnahme, environment production. After replacing this file, set that Railway variable from it. Do not copy into chats.",
+      "path": "~/.config/vitals/resend-leitwert-key",
+      "url": "https://resend.com/api-keys"
+    },
+    {
+      "kind": "reference",
+      "name": "Railway variables (leitwert / projektaufnahme)",
+      "note": "Variable names are declared in .railway/railway.ts of ANcpLua/leitwert-gateway; values live only on Railway. Change them through that file and railway config apply.",
+      "reference": "Railway project leitwert, service projektaufnahme, environment production",
+      "url": "https://railway.com/project/98e774a7-8b95-4a87-83be-f878fb52ba1c"
     }
   ]
 }

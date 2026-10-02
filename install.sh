@@ -53,4 +53,11 @@ with open(tmp, "w") as f:
 os.replace(tmp, path)
 print("fable-subagent-gate registered as PreToolUse(Agent) in ~/.claude/settings.json")
 PY
+
+# What agents use: the CLI on PATH, the skill that tells them how to register
+# a credential, and the registry template kept identical to the registry.
+mkdir -p "$HOME/.local/bin" "$HOME/.claude/skills/vitals-keys"
+ln -sf "$app/Contents/MacOS/vitals" "$HOME/.local/bin/vitals"
+cp skills/vitals-keys/SKILL.md "$HOME/.claude/skills/vitals-keys/SKILL.md"
+python3 scripts/registry_template.py
 echo "installed $app · agent $label running"

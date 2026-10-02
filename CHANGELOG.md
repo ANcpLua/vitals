@@ -5,6 +5,10 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
 ## Unreleased
 
 ### Added
+- `install.sh` links the CLI as `~/.local/bin/vitals`, installs the `vitals-keys`
+  skill agents follow to register credentials, and keeps the registry and
+  `examples/keys.ancplua.json` identical: an absent registry is created from the
+  template, an existing one is written back into it.
 - Fresh-agent setup and recovery guide, an ANcpLua registry template containing
   configuration only, and installer support for a Mac without a `.claude` directory.
 - Versioned credential-registry JSON schema and validated owner-only recovery copy;

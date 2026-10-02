@@ -140,6 +140,11 @@ Builds `Vitals.app` in release mode with an ad-hoc signature, copies it to
 `~/Applications/Vitals.app`, writes the `dev.ancplua.vitals` LaunchAgent and
 (re)starts it. Run it again to update. Needs the Xcode Command Line Tools.
 
+It also links the CLI as `~/.local/bin/vitals`, installs the `vitals-keys` skill
+(`skills/vitals-keys/SKILL.md`) into `~/.claude/skills`, and keeps the registry and
+`examples/keys.ancplua.json` identical: an absent registry is created from that
+template, an existing one is written back into it for you to commit.
+
 ## Develop
 
 ```bash
