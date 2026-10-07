@@ -175,7 +175,7 @@ public enum ClaudeTranscripts {
                   let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   object["type"] as? String == "assistant",
                   let stamp = object["timestamp"] as? String,
-                  let date = parse(stamp), date >= since,
+                  let date = Self.date(stamp), date >= since,
                   let message = object["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any]
             else { continue }
@@ -195,20 +195,21 @@ public enum ClaudeTranscripts {
     /// Reads only the tail of each file: a day of agent work is megabytes,
     /// the last 15 minutes fit in the last megabyte.
     public static func counts(at urls: [URL], since: Date, tailBytes: Int = 1 << 20) -> TokenCounts {
-        var total = TokenCounts()
-        for url in urls {
-            guard let handle = try? FileHandle(forReadingFrom: url) else { continue }
-            defer { try? handle.close() }
-            let size = (try? handle.seekToEnd()) ?? 0
-            let start = size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0
-            try? handle.seek(toOffset: start)
-            guard let data = try? handle.readToEnd(), var text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { continue }
-            if start > 0, let newline = text.firstIndex(of: "\n") {
-                text = String(text[text.index(after: newline)...])
-            }
-            total = total + counts(in: text, since: since)
+        urls.compactMap { tail($0, bytes: tailBytes) }.reduce(TokenCounts()) { $0 + counts(in: $1, since: since) }
+    }
+
+    /// The last `bytes` of a transcript, starting at a whole line.
+    public static func tail(_ url: URL, bytes: Int = 1 << 20) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        let start = size > UInt64(bytes) ? size - UInt64(bytes) : 0
+        try? handle.seek(toOffset: start)
+        guard let data = try? handle.readToEnd(), var text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { return nil }
+        if start > 0, let newline = text.firstIndex(of: "\n") {
+            text = String(text[text.index(after: newline)...])
         }
-        return total
+        return text
     }
 
     public static func burn(
@@ -224,7 +225,7 @@ public enum ClaudeTranscripts {
         )
     }
 
-    private static func parse(_ stamp: String) -> Date? {
+    static func date(_ stamp: String) -> Date? {
         fractional.date(from: stamp) ?? plain.date(from: stamp)
     }
 

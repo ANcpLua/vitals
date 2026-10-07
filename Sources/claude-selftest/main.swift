@@ -380,6 +380,114 @@ do {
     expect(false, "spawn log store: \(error)")
 }
 
+// Prompt cache from transcript usage
+do {
+    let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+    let iso = ISO8601DateFormatter()
+    iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    func request(_ id: String, at: Date, read: Int, write: Int, oneHour: Bool = true, model: String = "claude-opus-5-5", sidechain: Bool = false) -> String {
+        let bucket = oneHour ? "\"ephemeral_1h_input_tokens\":\(write),\"ephemeral_5m_input_tokens\":0" : "\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":\(write)"
+        return #"{"type":"assistant","isSidechain":\#(sidechain),"version":"2.1.292","timestamp":"\#(iso.string(from: at))","message":{"id":"\#(id)","model":"\#(model)","usage":{"input_tokens":2,"cache_read_input_tokens":\#(read),"cache_creation_input_tokens":\#(write),"cache_creation":{\#(bucket)}}}}"#
+    }
+    let transcript = [
+        request("m1", at: t0, read: 0, write: 100_000),
+        request("m2", at: t0.addingTimeInterval(600), read: 100_000, write: 2_000),
+        request("m2", at: t0.addingTimeInterval(601), read: 100_000, write: 2_000),
+        request("side", at: t0.addingTimeInterval(700), read: 0, write: 50_000, sidechain: true),
+        #"{"type":"assistant","timestamp":"\#(iso.string(from: t0.addingTimeInterval(800)))","message":{"id":"x","model":"<synthetic>","usage":{"input_tokens":0}}}"#,
+        request("m3", at: t0.addingTimeInterval(600 + 4_000), read: 0, write: 102_500)
+    ].joined(separator: "\n")
+    let cache = PromptCacheParser.parse(transcript, subagent: false)
+    expect(cache?.requests == 3 && cache?.ttl == 3_600 && cache?.ttlSource == .observed, "cache requests and ttl: \(String(describing: cache))")
+    expect(cache?.misses == 1 && cache?.lastMissCause == .expired && cache?.missRecacheTokens == 102_500, "expired miss: \(String(describing: cache))")
+    expect(cache?.recacheTokens == 102_502 && cache?.lastRequestAt == t0.addingTimeInterval(4_600), "recache tokens and last request")
+    let switched = PromptCacheParser.parse([
+        request("a", at: t0, read: 0, write: 80_000, oneHour: false),
+        request("b", at: t0.addingTimeInterval(60), read: 3_000, write: 80_000, oneHour: false, model: "claude-sonnet-5-5")
+    ].joined(separator: "\n"), subagent: true)
+    expect(switched?.ttl == 300 && switched?.lastMissCause == .modelSwitch, "5m bucket and model switch: \(String(describing: switched))")
+    expect(PromptCacheParser.parse("{\"type\":\"user\"}", subagent: false) == nil, "nothing before the first API response")
+
+    let now = t0
+    let warm = PromptCache(ttl: 3_600, lastRequestAt: now.addingTimeInterval(-22 * 60), requests: 10, hitRatio: 0.91, recacheTokens: 912_000)
+    expect(PromptCacheText.line(warm, now: now) == "cache ● 1h ▓▓▓▓░ 38m left · hit 91% · misses 0", "warm line: \(PromptCacheText.line(warm, now: now))")
+    expect(!warm.isExpiring(now: now) && warm.isExpiring(now: now.addingTimeInterval(27 * 60)), "expiring under a fifth of the TTL")
+    let cold = PromptCache(ttl: 3_600, lastRequestAt: now.addingTimeInterval(-7_200), requests: 10, misses: 1, lastMissCause: .expired, hitRatio: 0.9, recacheTokens: 912_400, version: "2.1.292")
+    expect(PromptCacheText.line(cold, now: now) == "cache ○ cold · next message re-caches 912k tokens · last miss: expired", "cold line: \(PromptCacheText.line(cold, now: now))")
+    expect(PromptCacheText.hint(cold, runningVersion: "2.1.293", instructionsEdited: true, now: now) == "large and cold: resume from summary", "large cold hint wins")
+    expect(PromptCacheText.hint(warm, runningVersion: nil, instructionsEdited: false, now: now) == nil, "no hint where none applies")
+    let upgraded = PromptCache(ttl: 3_600, lastRequestAt: now.addingTimeInterval(-60), requests: 2, hitRatio: 0.9, recacheTokens: 50_000, version: "2.1.291")
+    expect(PromptCacheText.hint(upgraded, runningVersion: "2.1.292", instructionsEdited: false, now: now) == "Claude Code upgrade: expect one full re-read", "pending upgrade hint")
+    let smallCold = PromptCache(ttl: 300, lastRequestAt: now.addingTimeInterval(-900), requests: 2, hitRatio: 0.5, recacheTokens: 50_000, version: "2.1.291")
+    expect(PromptCacheText.hint(smallCold, runningVersion: "2.1.292", instructionsEdited: false, now: now) == nil, "a cold cache gets no re-read hint")
+    let subagent = SubagentCache(id: "a", label: "Run tests", cache: PromptCache(ttl: 300, lastRequestAt: now.addingTimeInterval(-280), requests: 4, misses: 2, missRecacheTokens: 180_000, hitRatio: 0.4, recacheTokens: 92_000))
+    expect(PromptCacheText.subagentLine(subagent, now: now) == "↳ Run tests · ● 5m ▓░░░░ 20s left · misses 2, re-paid 180k", "subagent line: \(PromptCacheText.subagentLine(subagent, now: now))")
+
+    let config = CacheTTLConfig.parse(settings: Data(#"{"promptCacheTtl":"5m","env":{"CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL":"1h"}}"#.utf8), environment: ["CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"])
+    expect(config == CacheTTLConfig(main: 3_600, subagent: 3_600), "ttl overrides: \(config)")
+    expect(PromptCacheParser.parse(request("z", at: t0, read: 10, write: 0), subagent: false, configured: 300)?.ttlSource == .setting, "configured ttl when nothing was written")
+}
+
+// Auto-fix sessions of the desktop app
+do {
+    let record = DesktopSessionStore.parse(Data(#"{"sessionId":"local_1","cliSessionId":"c1","isArchived":false,"prs":[{"prNumber":4,"repo":"o/r","state":"MERGED","autoFix":true,"dismissed":true},{"prNumber":700,"repo":"Fallout-build/Fallout","branch":"b","state":"OPEN","autoFix":true}]}"#.utf8))
+    expect(record?.autoFixPR?.number == 700 && record?.cliSessionId == "c1", "desktop record: \(String(describing: record))")
+    let arguments: [Int32: [String]] = [
+        10: ["/Applications/Claude.app/Contents/Helpers/disclaimer", "--pgroup", "--", "/x/claude", "--resume=c1"],
+        11: ["/x/claude.app/Contents/MacOS/claude", "--output-format", "stream-json", "--resume=c1"],
+        12: ["/x/claude.app/Contents/MacOS/claude", "--output-format", "stream-json"]
+    ]
+    expect(AutoFixMatch.pid(cliSessionId: "c1", arguments: arguments) == 11, "pid from --resume, not the disclaimer wrapper")
+    let fresh = DesktopCodeSession(localId: "local_2", cliSessionId: "c2", prs: [BoundPullRequest(number: 5, repo: "o/r")])
+    let registry = [ClaudeSession(pid: 12, sessionId: "c2", name: "n", status: .idle, cwd: "/", startedAt: Date(), updatedAt: Date(), version: nil, hostSessionId: "local_2")]
+    let matched = AutoFixMatch.sessions(records: [record!, fresh], registry: registry, arguments: arguments)
+    expect(matched[11]?.pr.number == 700 && matched[12]?.pr.number == 5, "auto-fix sessions by pid: \(matched.keys.sorted())")
+
+    let pr = Data(#"{"state":"OPEN","reviewDecision":"","mergeable":"MERGEABLE","autoMergeRequest":null,"statusCheckRollup":[]}"#.utf8)
+    let approval = PullRequestStatus.parse(pr: pr, runs: Data(#"[{"status":"completed","conclusion":"action_required","workflowName":"build"}]"#.utf8), at: Date())
+    expect(approval?.ci == .approval && approval?.reviewDecision == nil && approval?.autoMerge == false, "action_required run: \(String(describing: approval))")
+    let failing = PullRequestStatus.parse(pr: Data(#"{"state":"OPEN","mergeable":"MERGEABLE","autoMergeRequest":{"mergeMethod":"SQUASH"},"statusCheckRollup":[{"__typename":"CheckRun","name":"ubuntu","status":"COMPLETED","conclusion":"FAILURE"},{"__typename":"StatusContext","context":"ci/x","state":"PENDING"}]}"#.utf8), runs: nil, at: Date())
+    expect(failing?.ci == .failing && failing?.failingChecks == ["ubuntu"] && failing?.autoMerge == true, "failing rollup: \(String(describing: failing))")
+    expect(PullRequestStatus.parse(pr: pr, runs: Data("[]".utf8), at: Date())?.ci == PullRequestStatus.CI.none, "no checks at all")
+
+    let bound = BoundPullRequest(number: 700, repo: "Fallout-build/Fallout")
+    func state(_ status: PullRequestStatus?, activity: AutoFixActivity? = nil, busy: Bool = false) -> AutoFixState {
+        AutoFix.state(AutoFixSession(pid: 1, localId: "l", cliSessionId: nil, pr: bound, activity: activity, status: status), busy: busy)
+    }
+    let at = Date()
+    expect(state(PullRequestStatus(state: "OPEN", ci: .pending, fetchedAt: at)) == .watching, "watching")
+    expect(state(PullRequestStatus(state: "OPEN", ci: .failing, fetchedAt: at), activity: AutoFixActivity(kinds: ["CI failure"], at: at), busy: true) == .working, "working on event")
+    expect(state(PullRequestStatus(state: "OPEN", ci: .failing, fetchedAt: at)) == .failing("CI failing"), "CI failing")
+    expect(state(PullRequestStatus(state: "OPEN", ci: .passing, mergeable: "CONFLICTING", fetchedAt: at)) == .failing("merge conflict"), "merge conflict")
+    expect(state(PullRequestStatus(state: "OPEN", ci: .approval, fetchedAt: at)).label == "waiting for approval", "waiting for approval")
+    expect(state(PullRequestStatus(state: "OPEN", ci: .passing, mergeable: "MERGEABLE", fetchedAt: at)) == .ready, "green and mergeable")
+    expect(state(PullRequestStatus(state: "MERGED", ci: .passing, fetchedAt: at)) == .closed("merged"), "merged is dimmed")
+
+    let event = #"<ci-monitor-event>\"Auto-fix pull requests\" is watching o/r PR #7 and detected the following.\n\no/r PR #7 has 1 new review comment (quoted below).\nQuoted from GitHub\nComment 1 — review summary\n> has merge conflicts\n(End of quoted GitHub text.)\n</ci-monitor-event>"#
+    let log = [
+        #"{"type":"user","timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"\#(event)"}}"#,
+        #"{"type":"assistant","timestamp":"2026-10-07T01:01:00.000Z","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"git push origin b"}}]}}"#,
+        #"{"type":"user","timestamp":"2026-10-07T01:01:05.000Z","message":{"content":[{"type":"tool_result","content":"To github.com:o/r.git\n   4deb8d9..da8f1b6  b -> b"}]}}"#,
+        #"{"type":"assistant","timestamp":"2026-10-07T01:02:00.000Z","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"gh api repos/o/r/pulls/7/comments/1/replies -f body=x"}}]}}"#
+    ]
+    let activity = AutoFixEvents.last(in: log.joined(separator: "\n"))
+    expect(activity?.kinds == ["review comment"] && activity?.action == "pushed da8f1b6, replied" && activity?.unanswered == true, "event and action: \(String(describing: activity))")
+    let answered = AutoFixEvents.last(in: (log + [#"{"type":"user","origin":{"kind":"human"},"message":{"content":"thanks"}}"#]).joined(separator: "\n"))
+    expect(answered?.unanswered == false, "a human message ends the event")
+    expect(AutoFixEvents.kinds("x\nFailing checks (1):\n> \"build\"") == ["CI failure"], "CI failure entry line")
+    expect(AutoFixEvents.kinds("o/r PR #7 has merge conflicts with main.") == ["merge conflict"], "merge conflict sentence")
+}
+
+// Status incidents as the incident page shows them
+do {
+    let summary = Data(#"{"status":{"indicator":"minor","description":"Minor Service Outage"},"components":[{"name":"Claude Console","status":"degraded_performance"}],"incidents":[{"name":"Elevated errors","incident_updates":[{"status":"identified","body":"Cause found.","created_at":"2026-10-07T17:28:02.568Z","display_at":"2026-10-07T17:28:02.568Z"},{"status":"investigating","body":"Still on it.","created_at":"2026-10-07T16:36:44.789Z","display_at":"2026-10-07T16:36:44.789Z"},{"status":"investigating","body":"Looking.","created_at":"2026-10-07T13:25:04.271Z","display_at":"2026-10-07T13:25:04.271Z"}]}]}"#.utf8)
+    let health = try ClaudeStatusParser.parse(summary)
+    let expected = "Claude Console\n\nElevated errors\n\nIdentified - Cause found.\nOct 07, 2026 - 17:28 UTC\n\nUpdate - Still on it.\nOct 07, 2026 - 16:36 UTC\n\nInvestigating - Looking.\nOct 07, 2026 - 13:25 UTC"
+    expect(health.level == .degraded && health.hoverText == expected, "incident hover text:\n\(health.hoverText)")
+} catch {
+    expect(false, "status incidents: \(error)")
+}
+
 if failures.isEmpty {
     print("claude selftest: ok")
     exit(0)

@@ -19,6 +19,8 @@ public struct ClaudeSession: Sendable, Equatable, Identifiable {
     public let startedAt: Date
     public let updatedAt: Date
     public let version: String?
+    /// The desktop app's `local_<id>` for a Code tab session; nil in a terminal.
+    public let hostSessionId: String?
 
     public var id: Int32 { pid }
 
@@ -31,7 +33,8 @@ public struct ClaudeSession: Sendable, Equatable, Identifiable {
         cwd: String,
         startedAt: Date,
         updatedAt: Date,
-        version: String?
+        version: String?,
+        hostSessionId: String? = nil
     ) {
         self.pid = pid
         self.sessionId = sessionId
@@ -42,6 +45,7 @@ public struct ClaudeSession: Sendable, Equatable, Identifiable {
         self.startedAt = startedAt
         self.updatedAt = updatedAt
         self.version = version
+        self.hostSessionId = hostSessionId
     }
 
     /// `~/repo-playground/customer-desk` for display.
@@ -101,7 +105,8 @@ public enum ClaudeSessionParser {
             cwd: payload.cwd,
             startedAt: started,
             updatedAt: updated,
-            version: payload.version
+            version: payload.version,
+            hostSessionId: payload.hostSessionId
         )
     }
 
@@ -119,11 +124,13 @@ public enum ClaudeSessionParser {
 public enum ClaudeSessionStore {
     /// Registry files whose process has exited are ignored. A file older than
     /// `staleAfter` is also ignored even if its pid is alive, which covers pid
-    /// reuse after a crash.
+    /// reuse after a crash, unless its pid is in `keeping`: a process whose
+    /// arguments already confirmed the session.
     public static func load(
         home: ClaudeHome = ClaudeHome(),
         now: Date = Date(),
         staleAfter: TimeInterval = 86_400,
+        keeping: Set<Int32> = [],
         isAlive: (Int32) -> Bool = processIsAlive
     ) -> ClaudeSessionsSnapshot {
         let files = (try? FileManager.default.contentsOfDirectory(
@@ -137,7 +144,7 @@ public enum ClaudeSessionStore {
                   let data = try? Data(contentsOf: file),
                   case .some(.some(let session)) = (try? ClaudeSessionParser.parse(data)),
                   isAlive(session.pid),
-                  now.timeIntervalSince(session.updatedAt) < staleAfter
+                  keeping.contains(session.pid) || now.timeIntervalSince(session.updatedAt) < staleAfter
             else { continue }
             sessions.append(session)
         }
@@ -165,6 +172,7 @@ private struct SessionPayload: Decodable {
     let kind: String?
     let entrypoint: String?
     let version: String?
+    let hostSessionId: String?
 }
 
 /// Plain-text form of the session list, shaped like Claude Code's own
