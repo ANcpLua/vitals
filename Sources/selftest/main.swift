@@ -483,3 +483,8 @@ do {
     }
 } catch { fail("credential metadata: \(error)") }
 print("ok    credential monitoring: configuration round-trip and invalid-but-present warning")
+
+guard let ownArguments = ProcessArguments.read(getpid()), ownArguments.first?.hasSuffix("selftest") == true else {
+    fail("process arguments must come back from KERN_PROCARGS2 with argv[0] first")
+}
+print("ok    process arguments: argv of this process")

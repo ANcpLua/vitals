@@ -20,12 +20,66 @@ public struct ClaudeHealth: Sendable, Equatable {
     public let level: ClaudeHealthLevel
     public let label: String
     public let detail: String
+    /// Unresolved incidents from the same summary, newest update first.
+    public let incidents: [StatusIncident]
 
-    public init(level: ClaudeHealthLevel, label: String, detail: String) {
+    public init(level: ClaudeHealthLevel, label: String, detail: String, incidents: [StatusIncident] = []) {
         self.level = level
         self.label = label
         self.detail = detail
+        self.incidents = incidents
     }
+
+    /// Hover text of the status badge: the affected components, then each
+    /// incident as its status page shows it.
+    public var hoverText: String {
+        ([detail] + incidents.map(\.text)).joined(separator: "\n\n")
+    }
+}
+
+/// One incident as on `status.claude.com/incidents/<id>`: its title and
+/// every update with the page's label and UTC time.
+public struct StatusIncident: Sendable, Equatable {
+    public struct Update: Sendable, Equatable {
+        /// investigating, identified, monitoring, resolved.
+        public let status: String
+        public let body: String
+        public let at: Date
+
+        public init(status: String, body: String, at: Date) {
+            self.status = status
+            self.body = body
+            self.at = at
+        }
+    }
+
+    public let name: String
+    public let updates: [Update]
+
+    public init(name: String, updates: [Update]) {
+        self.name = name
+        self.updates = updates
+    }
+
+    /// The page labels an update "Update" when its status repeats the one before it.
+    public var text: String {
+        var lines = [name]
+        for (index, update) in updates.enumerated() {
+            let repeats = index + 1 < updates.count && updates[index + 1].status == update.status
+            let label = repeats ? "Update" : update.status.prefix(1).uppercased() + update.status.dropFirst()
+            lines.append("\(label) - \(update.body)\n\(Self.stamp.string(from: update.at))")
+        }
+        return lines.joined(separator: "\n\n")
+    }
+
+    // DateFormatter is thread-safe for formatting since macOS 10.9.
+    nonisolated(unsafe) private static let stamp: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "MMM dd, yyyy - HH:mm 'UTC'"
+        return formatter
+    }()
 }
 
 public struct ClaudeUsageRow: Sendable, Equatable {
@@ -291,6 +345,12 @@ public actor ClaudeTelemetryClient {
 public enum ClaudeStatusParser {
     public static func parse(_ data: Data) throws -> ClaudeHealth {
         let payload = try JSONDecoder().decode(StatuspagePayload.self, from: data)
+        let incidents = (payload.incidents ?? []).map { incident in
+            StatusIncident(name: incident.name, updates: incident.incident_updates.compactMap { update in
+                guard let at = ClaudeTranscripts.date(update.display_at ?? update.created_at) else { return nil }
+                return StatusIncident.Update(status: update.status, body: update.body, at: at)
+            }.sorted { $0.at > $1.at })
+        }
         let degraded = payload.components.filter { $0.status != "operational" }
         let detail = degraded.isEmpty
             ? payload.status.description
@@ -301,19 +361,22 @@ public enum ClaudeStatusParser {
             return ClaudeHealth(
                 level: .operational,
                 label: "OPERATIONAL",
-                detail: detail
+                detail: detail,
+                incidents: incidents
             )
         case "minor":
             return ClaudeHealth(
                 level: .degraded,
                 label: "DEGRADED",
-                detail: detail
+                detail: detail,
+                incidents: incidents
             )
         case "major", "critical":
             return ClaudeHealth(
                 level: .outage,
                 label: "OUTAGE",
-                detail: detail
+                detail: detail,
+                incidents: incidents
             )
         default:
             return ClaudeHealth(
@@ -503,8 +566,21 @@ private struct StatuspagePayload: Decodable {
         let status: String
     }
 
+    struct Incident: Decodable {
+        struct Update: Decodable {
+            let status: String
+            let body: String
+            let created_at: String
+            let display_at: String?
+        }
+
+        let name: String
+        let incident_updates: [Update]
+    }
+
     let status: Status
     let components: [Component]
+    let incidents: [Incident]?
 }
 
 private struct UsagePayload: Decodable {

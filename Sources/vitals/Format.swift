@@ -41,6 +41,12 @@ enum Format {
         return gib(bytes)
     }
 
+    /// "262 MB" for a session row.
+    static func megabytes(_ bytes: UInt64?) -> String {
+        guard let bytes else { return "-- MB" }
+        return "\(bytes / 1_048_576) MB"
+    }
+
     static func pressure(_ value: Pressure) -> String {
         switch value {
         case .green: "GREEN"

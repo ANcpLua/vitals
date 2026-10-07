@@ -203,6 +203,55 @@ case "mcp":
     Printer.out("servers   \(snapshot.servers.count) · \(cache.toolCount) cached tools")
     Printer.out(MCPText.lines(snapshot.servers, tools: cache.tools))
 
+case "sessions-preview":
+    // Renders the sessions view to PNG: `live.png` from this Mac's sessions
+    // (transcripts, the desktop app's PR store, gh, one process sample) and
+    // `samples.png` with warm, expiring, cold and an auto-fix PR whose CI fails.
+    // Never calls the usage endpoint.
+    guard let raw = arguments.dropFirst().first else {
+        Printer.err("usage: vitals sessions-preview <directory>")
+        exit(2)
+    }
+    _ = NSApplication.shared
+    let directory = URL(fileURLWithPath: raw, isDirectory: true)
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let now = Date()
+    let telemetry = ClaudeTelemetrySnapshot(
+        health: ClaudeHealth(level: .unavailable, label: "PREVIEW", detail: ""),
+        usage: .unavailable("usage not read in preview"),
+        capturedAt: now
+    )
+    let sample = (try? observe(intervalMicros: 300_000).get())
+    let scan = MenuBarController.scanSessions(
+        candidates: (sample?.processes ?? []).filter { $0.name == "claude" }.map(\.pid), root: ClaudeHome().root, now: now
+    )
+    var autoFix = scan.autoFix
+    for (pid, fix) in autoFix { autoFix[pid]?.status = GitHubPullRequests.fetch(fix.pr, now: now) }
+    var processes: [Int32: ProcessUsage] = [:]
+    for process in sample?.processes ?? [] where autoFix[process.pid] != nil {
+        processes[process.pid] = ProcessUsage(cpuPercent: process.cpuPercent, footprintBytes: process.footprintBytes)
+    }
+    let live = ClaudeSectionModel(
+        telemetry: telemetry,
+        sessions: ClaudeSessionStore.load(now: now, keeping: Set(autoFix.keys)),
+        now: now,
+        burns: Dictionary(uniqueKeysWithValues: scan.burns.map { ($0.pid, $0) }),
+        caches: scan.caches,
+        autoFix: autoFix,
+        processes: processes
+    )
+    do {
+        try MainActor.assumeIsolated {
+            try SessionsPreview.write(live, to: directory.appendingPathComponent("live.png"))
+            try SessionsPreview.write(SessionsPreview.samples(now: now, telemetry: telemetry), to: directory.appendingPathComponent("samples.png"))
+        }
+        Printer.out("wrote \(directory.appendingPathComponent("live.png").path)")
+        Printer.out("wrote \(directory.appendingPathComponent("samples.png").path)")
+    } catch {
+        Printer.err("FAIL  \(error)")
+        exit(1)
+    }
+
 case "bar":
     let application = NSApplication.shared
     application.setActivationPolicy(.accessory)

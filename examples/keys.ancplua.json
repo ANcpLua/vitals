@@ -58,6 +58,7 @@
         "provider": "edge"
       },
       "name": "Browser store credentials (Edge + Firefox AMO)",
+      "note": "Use as EDGE_CLIENT_ID and EDGE_API_KEY (the file also holds the AMO pair). The same values are GitHub Actions secrets in ANcpLua/save-media and ANcpLua/yt-transcript. This file and ~/.config/vitals/set-store-secrets.sh were missing on 2026-10-05, so the values now exist only in those GitHub secrets. The Edge API key expires on 2026-11-29; its renewal writes a new copy here. Do not copy into chats.",
       "path": "~/.config/vitals/store-secrets.env",
       "remoteChecks": [
         {
@@ -78,7 +79,8 @@
           ],
           "workflow": "credential-health.yml"
         }
-      ]
+      ],
+      "url": "https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi"
     },
     {
       "kind": "file",
@@ -88,6 +90,7 @@
         "refreshFile": "~/.config/vitals/cws-refresh-token.txt"
       },
       "name": "Chrome Web Store OAuth client",
+      "note": "Use as CWS_CLIENT_ID and CWS_CLIENT_SECRET (installed.client_id and installed.client_secret). Google Cloud project uplifted-nuance-408417 (server), OAuth client Desktop client 2; its only secret was added on 2026-10-05 and the older one deleted. The same values are GitHub Actions secrets CWS_CLIENT_ID and CWS_CLIENT_SECRET in ANcpLua/save-media and ANcpLua/yt-transcript; after replacing this file, set both there. Do not copy into chats.",
       "path": "~/.config/vitals/cws-client.json",
       "remoteChecks": [
         {
@@ -112,7 +115,8 @@
           ],
           "workflow": "credential-health.yml"
         }
-      ]
+      ],
+      "url": "https://console.cloud.google.com/auth/clients/930061939368-ks94qia4tja8d5j5ljtauo34a5j17r1r.apps.googleusercontent.com?project=uplifted-nuance-408417"
     },
     {
       "kind": "file",
@@ -122,6 +126,7 @@
         "refreshFile": "~/.config/vitals/cws-refresh-token.txt"
       },
       "name": "Chrome Web Store refresh token",
+      "note": "Use as CWS_REFRESH_TOKEN. Scope chromewebstore, granted on 2026-10-05 by the publisher's Google account for Desktop client 2 (see Chrome Web Store OAuth client); the previous token was rejected with invalid_grant from 2026-10-04. Mint a new one through that client's consent flow; revoke at the URL. The same value is GitHub Actions secret CWS_REFRESH_TOKEN in ANcpLua/save-media and ANcpLua/yt-transcript; after replacing this file, set both there. CWS_PUBLISHER_ID exists only as a GitHub Actions secret in both repositories. Do not copy into chats.",
       "path": "~/.config/vitals/cws-refresh-token.txt",
       "remoteChecks": [
         {
@@ -146,7 +151,8 @@
           ],
           "workflow": "credential-health.yml"
         }
-      ]
+      ],
+      "url": "https://myaccount.google.com/connections"
     },
     {
       "kind": "keychain",
@@ -171,6 +177,7 @@
         "provider": "amo"
       },
       "name": "AMO API",
+      "note": "Use as AMO_JWT_ISSUER (account field) and AMO_JWT_SECRET. One key pair per Mozilla account, shared as GitHub Actions secrets AMO_JWT_ISSUER and AMO_JWT_SECRET in ANcpLua/save-media and ANcpLua/yt-transcript. The Keychain item was missing on 2026-10-05; the pair now exists only in those GitHub secrets. Never regenerate it to restore a local copy: a new pair invalidates the old one in both repositories at once. Do not copy into chats.",
       "remoteChecks": [
         {
           "job": "amo",
@@ -191,7 +198,8 @@
           "workflow": "credential-health.yml"
         }
       ],
-      "service": "AMO API (addons.mozilla.org)"
+      "service": "AMO API (addons.mozilla.org)",
+      "url": "https://addons.mozilla.org/developers/addon/api/key/"
     },
     {
       "kind": "file",
@@ -200,6 +208,7 @@
         "provider": "amo"
       },
       "name": "Firefox AMO credentials in publishing file",
+      "note": "Use as AMO_JWT_ISSUER and AMO_JWT_SECRET inside store-secrets.env; the same pair as the AMO API entry. The file was missing on 2026-10-05; see the AMO API entry. Do not copy into chats.",
       "path": "~/.config/vitals/store-secrets.env",
       "remoteChecks": [
         {
@@ -220,7 +229,8 @@
           ],
           "workflow": "credential-health.yml"
         }
-      ]
+      ],
+      "url": "https://addons.mozilla.org/developers/addon/api/key/"
     },
     {
       "kind": "file",
@@ -255,6 +265,20 @@
       "note": "Variable names are declared in .railway/railway.ts of ANcpLua/leitwert-gateway; values live only on Railway. Change them through that file and railway config apply.",
       "reference": "Railway project leitwert, service projektaufnahme, environment production",
       "url": "https://railway.com/project/98e774a7-8b95-4a87-83be-f878fb52ba1c"
+    },
+    {
+      "kind": "reference",
+      "name": "qyl collector API key (qyl / qyl-collector, qyl-mcp)",
+      "note": "Use as QYL_OTLP_PROJECT_KEYS on the collector, a JSON object mapping project IDs to key arrays ({\"default\":[key]}); clients send the key as QYL_API_KEY (x-otlp-api-key). The same value is QYL_API_KEY on qyl-mcp; replacing it means updating both, collector first. Moved on 2026-10-02 from QYL_OTLP_PRIMARY_API_KEY, which no longer exists (ANcpLua/qyl#632). Variable names are declared in .railway/railway.ts of ANcpLua/qyl and ANcpLua/qyl.mcp; values live only on Railway.",
+      "reference": "Railway project qyl, environment production: service qyl-collector variable QYL_OTLP_PROJECT_KEYS, service qyl-mcp variable QYL_API_KEY",
+      "url": "https://railway.com/project/5eaa4020-71d9-4828-89d3-316cb188529e"
+    },
+    {
+      "kind": "reference",
+      "name": "GitHub self-hosted runner archcheck-runner (ANcpLua/archcheck-thesis)",
+      "note": "Use as: nothing; the runner service reads it itself. It lives only inside the OrbStack machine archcheck-runner, in /home/alexandernachtmann/actions-runner/.credentials and .credentials_rsaparams, written on 2026-10-07 by build/runner.sh up in ANcpLua/archcheck-thesis from a one-hour, single-use registration token (gh api repos/ANcpLua/archcheck-thesis/actions/runners/registration-token) that is piped in and never stored. Replace with build/runner.sh remove, then up; revoke at the URL. Do not copy into chats.",
+      "reference": "OrbStack machine archcheck-runner, /home/alexandernachtmann/actions-runner/.credentials and .credentials_rsaparams; GitHub repository ANcpLua/archcheck-thesis, Settings > Actions > Runners",
+      "url": "https://github.com/ANcpLua/archcheck-thesis/settings/actions/runners"
     }
   ]
 }
