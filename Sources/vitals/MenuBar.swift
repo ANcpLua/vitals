@@ -41,6 +41,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// the gate hook's log, scanned off the main actor after every usage poll.
     private var sessionBurns: [Int32: SessionBurn] = [:]
     private var burnScanInFlight = false
+    /// Prompt cache per session and the desktop app's auto-fix sessions,
+    /// from the same scan; every 30 s while the menu is open so countdowns
+    /// and new subagents show up.
+    private var sessionCaches: [Int32: SessionCache] = [:]
+    private var autoFixSessions: [Int32: AutoFixSession] = [:]
+    private var sessionsScannedAt = Date.distantPast
+    private static let sessionScanInterval: TimeInterval = 30
+    /// GitHub state of the auto-fix PRs, read with `gh` at most once a minute.
+    private var pullRequests: [String: PullRequestStatus] = [:]
+    private var pullRequestsFetchedAt = Date.distantPast
+    private var pullRequestFetchInFlight = false
     /// API key register: presence only, checked on menu open at most every
     /// 10 minutes, off the main actor because `security` is a process.
     private var keyStatuses: [KeyStatus] = []
@@ -120,7 +131,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         menuIsOpen = true
         refreshKeys(force: false)
-        claudeSessions = ClaudeSessionStore.load(home: claudeHome)
+        claudeSessions = loadSessions()
+        if Date().timeIntervalSince(sessionsScannedAt) >= Self.sessionScanInterval { scanSessionBurns() }
         reloadMCP()
         if let snapshot = lastSnapshot {
             render(snapshot)
@@ -379,7 +391,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             lastSnapshot = displaySnapshot
             updateTitle(displaySnapshot)
             if menuIsOpen {
-                claudeSessions = ClaudeSessionStore.load(home: claudeHome)
+                claudeSessions = loadSessions()
+                if Date().timeIntervalSince(sessionsScannedAt) >= Self.sessionScanInterval { scanSessionBurns() }
                 updateLive(displaySnapshot)
             }
             let decision = Derive.evaluateAlarms(snapshot: snapshot, thresholds: thresholds, previous: alarmState)
@@ -818,11 +831,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func claudeSectionModel() -> ClaudeSectionModel? {
         guard let claudeSnapshot else { return nil }
+        var autoFix = autoFixSessions
+        for (pid, fix) in autoFix { autoFix[pid]?.status = pullRequests[fix.pr.reference] }
+        var processes: [Int32: ProcessUsage] = [:]
+        for process in lastSnapshot?.processes ?? [] where autoFix[process.pid] != nil {
+            processes[process.pid] = ProcessUsage(cpuPercent: process.cpuPercent, footprintBytes: process.footprintBytes)
+        }
         return ClaudeSectionModel(
             telemetry: claudeSnapshot,
             sessions: claudeSessions,
             now: Date(),
-            burns: sessionBurns
+            burns: sessionBurns,
+            caches: sessionCaches,
+            autoFix: autoFix,
+            processes: processes
         )
     }
 
@@ -925,31 +947,109 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         render(lastSnapshot)
     }
 
-    // MARK: Session burn
+    // MARK: Session burn, prompt cache, auto-fix
+
+    /// Registry sessions; an auto-fix session stays listed past the registry's
+    /// staleness cut-off because its process arguments confirm who it is, and
+    /// such a session idles for days between events.
+    private func loadSessions() -> ClaudeSessionsSnapshot {
+        ClaudeSessionStore.load(home: claudeHome, keeping: Set(autoFixSessions.keys))
+    }
+
+    struct SessionScan: Sendable {
+        let burns: [SessionBurn]
+        let caches: [Int32: SessionCache]
+        let autoFix: [Int32: AutoFixSession]
+    }
 
     /// The transcript scan reads files, so it runs off the main actor and
     /// reports back through `finishSessionBurns`.
     private func scanSessionBurns() {
-        claudeSessions = ClaudeSessionStore.load(home: claudeHome)
+        claudeSessions = loadSessions()
         guard !burnScanInFlight else { return }
         burnScanInFlight = true
-        let sessions = claudeSessions.sessions
+        sessionsScannedAt = Date()
         let root = claudeHome.root
         let now = Date()
+        let candidates = (lastSnapshot?.processes ?? []).filter { $0.name == "claude" }.map(\.pid)
+        let scan = Task.detached(priority: .utility) {
+            Self.scanSessions(candidates: candidates, root: root, now: now)
+        }
         Task { [weak self] in
-            let burns = await Self.scanBurns(sessions, root: root, now: now)
-            self?.finishSessionBurns(burns)
+            self?.finishSessionBurns(await scan.value)
         }
     }
 
-    nonisolated private static func scanBurns(_ sessions: [ClaudeSession], root: URL, now: Date) async -> [SessionBurn] {
+    /// Also used by `vitals sessions-preview`.
+    nonisolated static func scanSessions(candidates: [Int32], root: URL, now: Date) -> SessionScan {
         let home = ClaudeHome(root: root)
-        return sessions.map { ClaudeTranscripts.burn(for: $0, home: home, now: now) }
+        let registry = ClaudeSessionStore.load(home: home, now: now, staleAfter: .infinity).sessions
+        var arguments: [Int32: [String]] = [:]
+        for pid in Set(candidates + registry.map(\.pid)) {
+            arguments[pid] = ProcessArguments.read(pid)
+        }
+        var autoFix = AutoFixMatch.sessions(records: DesktopSessionStore.load(), registry: registry, arguments: arguments)
+        let sessions = ClaudeSessionStore.load(home: home, now: now, keeping: Set(autoFix.keys)).sessions
+        for (pid, fix) in autoFix {
+            guard let session = sessions.first(where: { $0.pid == pid }) else { continue }
+            let transcript = home.root.appendingPathComponent(
+                "projects/\(ClaudeTranscripts.slug(session.cwd))/\(fix.cliSessionId ?? session.sessionId).jsonl"
+            )
+            autoFix[pid]?.activity = AutoFixEvents.last(at: transcript)
+        }
+        let config = CacheTTLConfig.load(home: home)
+        var caches: [Int32: SessionCache] = [:]
+        for session in sessions {
+            caches[session.pid] = PromptCacheScanner.scan(session, home: home, config: config, now: now)
+        }
+        return SessionScan(
+            burns: sessions.map { ClaudeTranscripts.burn(for: $0, home: home, now: now) },
+            caches: caches,
+            autoFix: autoFix
+        )
     }
 
-    private func finishSessionBurns(_ burns: [SessionBurn]) {
+    private func finishSessionBurns(_ scan: SessionScan) {
         burnScanInFlight = false
-        sessionBurns = Dictionary(uniqueKeysWithValues: burns.map { ($0.pid, $0) })
+        sessionBurns = Dictionary(uniqueKeysWithValues: scan.burns.map { ($0.pid, $0) })
+        sessionCaches = scan.caches
+        autoFixSessions = scan.autoFix
+        claudeSessions = loadSessions()
+        refreshPullRequests()
+        updateClaudeView()
+    }
+
+    /// Open PRs once a minute; merged and closed ones are final.
+    private func refreshPullRequests() {
+        let now = Date()
+        guard !pullRequestFetchInFlight,
+              now.timeIntervalSince(pullRequestsFetchedAt) >= GitHubPullRequests.refreshInterval
+        else { return }
+        let due = autoFixSessions.values.map(\.pr).filter { pullRequests[$0.reference]?.isFinal != true }
+        guard !due.isEmpty else { return }
+        pullRequestFetchInFlight = true
+        pullRequestsFetchedAt = now
+        Task { [weak self] in
+            let statuses = await Self.fetchPullRequests(due, now: now)
+            self?.finishPullRequests(statuses)
+        }
+    }
+
+    nonisolated private static func fetchPullRequests(_ prs: [BoundPullRequest], now: Date) async -> [String: PullRequestStatus] {
+        var statuses: [String: PullRequestStatus] = [:]
+        for pr in prs {
+            statuses[pr.reference] = GitHubPullRequests.fetch(pr, now: now)
+        }
+        return statuses
+    }
+
+    private func finishPullRequests(_ statuses: [String: PullRequestStatus]) {
+        pullRequestFetchInFlight = false
+        pullRequests.merge(statuses) { _, new in new }
+        updateClaudeView()
+    }
+
+    private func updateClaudeView() {
         guard menuIsOpen else { return }
         if let claudeView, let model = claudeSectionModel(), claudeView.update(model) { return }
         if let lastSnapshot { render(lastSnapshot) }
@@ -1571,6 +1671,24 @@ enum Palette {
         if percent >= 100 { return coral }
         if percent >= 50 { return amber }
         return blue
+    }
+
+    /// System Settings > Accessibility > Display; read on every render.
+    static var increaseContrast: Bool { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast }
+    static var differentiateWithoutColor: Bool { NSWorkspace.shared.accessibilityDisplayShouldDifferentiateWithoutColor }
+
+    /// Secondary text, raised to primary under Increase Contrast.
+    static var detail: NSColor { increaseContrast ? primary : secondary }
+
+    /// Always paired with the state's text label.
+    static func autoFix(_ state: AutoFixState) -> NSColor {
+        switch state {
+        case .watching: blue
+        case .working: amber
+        case .failing: coral
+        case .ready: mint
+        case .approval, .closed: secondary
+        }
     }
 }
 

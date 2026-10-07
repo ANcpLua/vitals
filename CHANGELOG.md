@@ -5,6 +5,22 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
 ## Unreleased
 
 ### Added
+- Auto-fix PR sessions in the session list: the desktop app's bound PR (its
+  `claude-code-sessions` store, mapped to the process by `--resume=` in its
+  arguments) gets an "AUTO-FIX #700" marker colored and labelled by state
+  (watching, working on event, CI failing or merge conflict, waiting for
+  approval, CI green and mergeable, merged or closed) and detail lines: repo,
+  branch, CI, review, mergeable, auto-merge, the last `<ci-monitor-event>` and
+  what the session did (pushed sha, replied, nothing), pid, RAM and CPU. GitHub
+  is read with `gh` at most once a minute; auto-fix sessions stay listed past
+  the registry's 24 h staleness cut-off.
+- Prompt-cache countdown per session and per recent subagent from the
+  transcripts: effective TTL (observed bucket, then settings, then default),
+  time left, hit ratio, misses and their re-paid tokens, the re-cache cost once
+  cold with the last miss cause, and at most one hint. Rescanned every 30 s
+  while the menu is open. `vitals sessions-preview <dir>` renders the view.
+- Hovering the Claude status badge shows the unresolved incidents from the
+  polled status summary as the incident page words them.
 - `install.sh` links the CLI as `~/.local/bin/vitals`, installs the `vitals-keys`
   skill agents follow to register credentials, and keeps the registry and
   `examples/keys.ancplua.json` identical: an absent registry is created from the
