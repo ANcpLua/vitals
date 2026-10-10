@@ -37,8 +37,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let clipboard = ClipboardMonitor()
     private lazy var clipboardPanel = ClipboardPanel(monitor: clipboard)
     private var clipboardHotKey: HotKey?
-    /// Per-session token burn from the transcripts and subagent spawns from
-    /// the gate hook's log, scanned off the main actor after every usage poll.
+    /// Per-session token burn from the transcripts, scanned off the main actor
+    /// after every usage poll.
     private var sessionBurns: [Int32: SessionBurn] = [:]
     private var burnScanInFlight = false
     /// Prompt cache per session and the desktop app's auto-fix sessions,

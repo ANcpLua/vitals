@@ -29,9 +29,7 @@ Line Tools Python. Leave any existing shared Python environment unchanged.
 launchctl print "gui/$(id -u)/dev.ancplua.vitals"
 ```
 
-The installer builds and signs the app, installs the LaunchAgent, and registers
-the bundled `fable-subagent-gate.sh` as a Claude `PreToolUse(Agent)` hook. It creates
-`~/.claude` when absent and preserves unrelated settings and hooks. It links the CLI
+The installer builds and signs the app and installs the LaunchAgent. It links the CLI
 as `~/.local/bin/vitals`, installs the `vitals-keys` skill into `~/.claude/skills`,
 and runs `scripts/registry_template.py` (step 2). It leaves credential files in
 place. With the lid closed and Stay awake active, use the installer to restart;
