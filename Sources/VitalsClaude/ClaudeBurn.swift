@@ -33,77 +33,22 @@ public struct TokenCounts: Codable, Equatable, Sendable {
     }
 }
 
-/// Subagents a session started, from the log the Claude Code hook
-/// `fable-subagent-gate.sh` writes: one line per `Agent` tool call with the
-/// resolved model, whether it was Fable, and whether the gate denied it.
-public struct SpawnCounts: Codable, Equatable, Sendable {
-    /// Calls that went through.
-    public var spawned = 0
-    /// Of those, on Fable.
-    public var fable = 0
-    /// Gate denials, each one a reminder the orchestrator had to answer.
-    public var reminders = 0
-
-    public init(spawned: Int = 0, fable: Int = 0, reminders: Int = 0) {
-        self.spawned = spawned
-        self.fable = fable
-        self.reminders = reminders
-    }
-
-    /// "3 agents, 2 Fable"; nil when the session spawned nothing.
-    public var short: String? {
-        guard spawned > 0 else { return nil }
-        let agents = spawned == 1 ? "1 agent" : "\(spawned) agents"
-        return fable > 0 ? "\(agents), \(fable) Fable" : agents
-    }
-}
-
-public enum AgentSpawns {
-    public static func directory(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
-        home.appendingPathComponent(".config/vitals/agent-spawns")
-    }
-
-    public static func counts(in text: String) -> SpawnCounts {
-        var counts = SpawnCounts()
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let data = line.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { continue }
-            if object["denied"] as? Bool == true {
-                counts.reminders += 1
-                continue
-            }
-            counts.spawned += 1
-            if object["fable"] as? Bool == true { counts.fable += 1 }
-        }
-        return counts
-    }
-
-    public static func counts(for sessionId: String, directory: URL = directory()) -> SpawnCounts {
-        let url = directory.appendingPathComponent("\(sessionId).jsonl")
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return SpawnCounts() }
-        return counts(in: text)
-    }
-}
-
 /// What one live session burned inside the window, from its transcript
-/// under `~/.claude/projects`, plus the subagents it started. Absolute
-/// numbers: the usage endpoint only reports percentages.
+/// under `~/.claude/projects`. Absolute numbers: the usage endpoint only
+/// reports percentages.
 public struct SessionBurn: Codable, Equatable, Sendable {
     public let pid: Int32
     public let name: String
     public let cwd: String
     public let counts: TokenCounts
     public let minutes: Double
-    public let spawns: SpawnCounts
 
-    public init(pid: Int32, name: String, cwd: String, counts: TokenCounts, minutes: Double, spawns: SpawnCounts = SpawnCounts()) {
+    public init(pid: Int32, name: String, cwd: String, counts: TokenCounts, minutes: Double) {
         self.pid = pid
         self.name = name
         self.cwd = cwd
         self.counts = counts
         self.minutes = minutes
-        self.spawns = spawns
     }
 
     public var tokens: Int { counts.total }
@@ -111,12 +56,10 @@ public struct SessionBurn: Codable, Equatable, Sendable {
     public var outputPerMinute: Double { Double(counts.output) / minutes }
     public var weightedPerMinute: Double { counts.weighted / minutes }
 
-    /// "×10 · 350k ctx · 3 agents, 2 Fable": calls in the window, the
-    /// context each carried, and the subagents started so far.
+    /// "×10 · 350k ctx": calls in the window and the context each carried.
     public var short: String {
         var parts: [String] = []
         if counts.calls > 0 { parts.append("×\(counts.calls) · \(ClaudeBurn.tokens(Double(counts.context))) ctx") }
-        if let spawns = spawns.short { parts.append(spawns) }
         return parts.isEmpty ? "idle" : parts.joined(separator: " · ")
     }
 
@@ -125,9 +68,7 @@ public struct SessionBurn: Codable, Equatable, Sendable {
             "\(counts.calls) calls in \(Int(minutes)) min, \(ClaudeBurn.tokens(Double(counts.context))) context each, "
             + "\(ClaudeBurn.tokens(outputPerMinute)) output/min, \(ClaudeBurn.tokens(Double(counts.cacheRead) / minutes)) cache read/min, "
             + "weighted \(ClaudeBurn.tokens(weightedPerMinute))/min"
-        guard let agents = spawns.short else { return calls }
-        let reminders = spawns.reminders == 0 ? "" : ", \(spawns.reminders) Fable reminder\(spawns.reminders == 1 ? "" : "s")"
-        return "\(calls); \(agents) spawned\(reminders)"
+        return calls
     }
 }
 
@@ -214,14 +155,13 @@ public enum ClaudeTranscripts {
 
     public static func burn(
         for session: ClaudeSession, home: ClaudeHome, now: Date,
-        window: TimeInterval = ClaudeBurn.window, spawns: URL = AgentSpawns.directory()
+        window: TimeInterval = ClaudeBurn.window
     ) -> SessionBurn {
         let since = now.addingTimeInterval(-window)
         return SessionBurn(
             pid: session.pid, name: session.name, cwd: session.cwd,
             counts: counts(at: transcriptURLs(for: session, home: home), since: since),
-            minutes: window / 60,
-            spawns: AgentSpawns.counts(for: session.sessionId, directory: spawns)
+            minutes: window / 60
         )
     }
 

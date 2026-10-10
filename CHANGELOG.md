@@ -4,6 +4,11 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
 
 ## Unreleased
 
+### Removed
+- The Fable subagent gate: `hooks/fable-subagent-gate.sh`, its `PreToolUse(Agent)`
+  registration in `install.sh`, its test, and the spawn tally that read its log
+  (`SpawnCounts`, `AgentSpawns`, the `spawns` line of `vitals burn`).
+
 ### Added
 - Auto-fix PR sessions in the session list: the desktop app's bound PR (its
   `claude-code-sessions` store, mapped to the process by `--resume=` in its

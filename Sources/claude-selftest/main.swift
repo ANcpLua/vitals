@@ -352,33 +352,9 @@ expect(counted.calls == 2 && counted.input == 110 && counted.output == 2 && coun
        "transcript counts must dedupe by message id and honor the window, got \(counted)")
 expect(counted.total == 122 && counted.context == 60 && abs(counted.weighted - (110 + 5 + 0.6 + 10)) < 0.01, "totals, context and price weighting")
 
-// Burn presentation, and the subagent spawn log the gate hook writes: a
-// denied line is a reminder, not a spawn; everything else counts, Fable
-// separately.
+// Burn presentation.
 let burn = SessionBurn(pid: 4242, name: "ancplua-a4", cwd: "/Users/ancplua/x", counts: TokenCounts(calls: 10, input: 320, output: 16_976, cacheWrite: 20_621, cacheRead: 3_542_066), minutes: 15)
 expect(burn.short == "×10 · 356k ctx" && abs(burn.outputPerMinute - 1_131.7) < 0.1 && abs(burn.tokensPerMinute - 238_665.5) < 0.1, "burn presentation: \(burn.short) \(burn.outputPerMinute)")
-let spawnLog = [
-    #"{"t": 1.0, "model": "fable", "fable": true, "denied": true, "description": "asked"}"#,
-    #"{"t": 2.0, "model": "fable", "fable": true, "denied": false, "description": "kept"}"#,
-    #"{"t": 3.0, "model": "opus", "fable": false, "denied": false, "description": "worker"}"#,
-    "not json",
-    #"{"t": 4.0, "model": "claude-fable-5-1", "source": "inherits parent", "fable": true, "denied": false}"#
-].joined(separator: "\n")
-let spawns = AgentSpawns.counts(in: spawnLog)
-expect(spawns == SpawnCounts(spawned: 3, fable: 2, reminders: 1), "spawn log counts: \(spawns)")
-expect(spawns.short == "3 agents, 2 Fable" && SpawnCounts().short == nil && SpawnCounts(spawned: 1).short == "1 agent", "spawn presentation")
-let withSpawns = SessionBurn(pid: 1, name: "s", cwd: "/", counts: TokenCounts(), minutes: 15, spawns: spawns)
-expect(withSpawns.short == "3 agents, 2 Fable" && withSpawns.long == "no calls in the last 15 min; 3 agents, 2 Fable spawned, 1 Fable reminder", "spawns without calls: \(withSpawns.long)")
-let spawnDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("vitals-claude-selftest-\(getpid())/agent-spawns")
-do {
-    try FileManager.default.createDirectory(at: spawnDir, withIntermediateDirectories: true)
-    try spawnLog.write(to: spawnDir.appendingPathComponent("abc.jsonl"), atomically: true, encoding: .utf8)
-    expect(AgentSpawns.counts(for: "abc", directory: spawnDir) == spawns, "spawn log is read per session id")
-    expect(AgentSpawns.counts(for: "missing", directory: spawnDir) == SpawnCounts(), "a session without a log spawned nothing")
-    try? FileManager.default.removeItem(at: spawnDir.deletingLastPathComponent())
-} catch {
-    expect(false, "spawn log store: \(error)")
-}
 
 // Prompt cache from transcript usage
 do {

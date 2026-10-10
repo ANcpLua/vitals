@@ -166,8 +166,8 @@ case "keys":
 
 case "burn":
     // Per live session: calls, context and output rate for the last 15
-    // minutes from its transcript, plus the subagents it started, from the
-    // gate hook's log. Reads local files only; never touches the usage endpoint.
+    // minutes from its transcript. Reads local files only; never touches the
+    // usage endpoint.
     let now = Date()
     let home = ClaudeHome()
     let sessions = ClaudeSessionStore.load(home: home).sessions
@@ -176,7 +176,6 @@ case "burn":
         let burn = ClaudeTranscripts.burn(for: session, home: home, now: now)
         Printer.out("session   \(session.name.padding(toLength: 14, withPad: " ", startingAt: 0)) pid \(session.pid)  \(burn.long) · \(session.abbreviatedCwd())")
     }
-    Printer.out("spawns    \(AgentSpawns.directory().path)")
 
 case "mcp":
     // Headless MCP view: every server Claude Code would see for the live

@@ -20,7 +20,7 @@ concealed or transient are never recorded. The history lives owner-only in
 `~/Library/Application Support/Vitals/clipboard.json`; Clear empties it and
 deletes the image files.
 
-## Claude sessions and the Fable gate
+## Claude sessions
 
 Per live session the transcript under `~/.claude/projects` gives calls,
 context per call and output rate for the last 15 minutes, shown in the
@@ -29,19 +29,6 @@ everything else, so the tooltip ranks by price-weighted tokens, never raw
 tokens per minute. The usage bars show what the endpoint reports and nothing
 more: no forecast, because a rate measured over a 15-minute burst says
 nothing about the hours ahead, and the 5-hour window already stops a burst.
-
-The one expensive action worth guarding is a subagent on Fable, since only
-Fable counts against the weekly Fable limit. `install.sh` registers
-`fable-subagent-gate.sh` as a Claude Code PreToolUse hook matched on the
-`Agent` tool. It is silent unless the subagent would run on Fable: an explicit
-`model: fable`, or no model where the agent definition has none and the calling
-session's transcript shows Fable. Then it denies the call once with a reminder
-the orchestrator has to answer: resend with `model: "opus"`, or resend the same
-call within two minutes to keep Fable. It asks again at every fifth Fable
-spawn. Every `Agent` call is logged to
-`~/.config/vitals/agent-spawns/<session>.jsonl`, and the session row shows
-the tally: `3 agents, 2 Fable`. `vitals burn` prints the same per session,
-from local files only.
 
 ## API keys
 

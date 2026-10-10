@@ -15,7 +15,6 @@ cp "$scratch/release/vitals" "$app/Contents/MacOS/vitals"
 cp -R "$scratch/release/vitals_VitalsKernel.bundle" "$app/Contents/Resources/"
 cp "Info.plist" "$app/Contents/Info.plist"
 cp "PrivacyInfo.xcprivacy" "$app/Contents/Resources/PrivacyInfo.xcprivacy"
-cp "hooks/fable-subagent-gate.sh" "$app/Contents/Resources/fable-subagent-gate.sh"
 codesign --force --sign - "$app"
 
 echo "built $app"
