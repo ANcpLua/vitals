@@ -279,6 +279,13 @@
       "note": "Use as: nothing; the runner service reads it itself. It lives only inside the OrbStack machine archcheck-runner, in /home/alexandernachtmann/actions-runner/.credentials and .credentials_rsaparams, written on 2026-10-07 by build/runner.sh up in ANcpLua/archcheck-thesis from a one-hour, single-use registration token (gh api repos/ANcpLua/archcheck-thesis/actions/runners/registration-token) that is piped in and never stored. Replace with build/runner.sh remove, then up; revoke at the URL. Do not copy into chats.",
       "reference": "OrbStack machine archcheck-runner, /home/alexandernachtmann/actions-runner/.credentials and .credentials_rsaparams; GitHub repository ANcpLua/archcheck-thesis, Settings > Actions > Runners",
       "url": "https://github.com/ANcpLua/archcheck-thesis/settings/actions/runners"
+    },
+    {
+      "kind": "reference",
+      "name": "Claude plugin directory push webhook secret (mcp-builder-v2)",
+      "note": "No variable name: no code reads it. The value lives only in that GitHub webhook's config and at the Claude directory, which showed it once on 2026-10-10. To replace it, press Rotate secret on the plugin's Settings tab, then set the new value on the webhook with gh api -X PATCH repos/ANcpLua/mcp-builder-v2/hooks/695245371 (the old one stops working immediately). Do not copy into chats.",
+      "reference": "GitHub webhook 695245371 on ANcpLua/mcp-builder-v2 (push events, application/json), signing deliveries to the Claude plugin directory's payload URL",
+      "url": "https://claude.ai/directory/manage/plugins/df6c33ac-2baf-4e21-b784-8f952f9b1e11?tab=settings"
     }
   ]
 }
