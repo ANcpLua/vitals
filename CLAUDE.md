@@ -111,8 +111,7 @@ row and a submenu or their own panel.
 
 ## Conventions
 
-- Commit: one short subject line plus the `Co-Authored-By: Claude Fable 5.1
-  <noreply@anthropic.com>` trailer, no body. Push to `main`, wait for CI.
+- Commit: one short subject line, no body. Push to `main`, wait for CI.
 - CHANGELOG under `## Unreleased`, Keep a Changelog style, one bullet per change.
 - No em dashes, no emoji in text shown to the user.
 - Don't run `vitals claude` in a loop: each call spends one of the usage
