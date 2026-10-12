@@ -116,7 +116,10 @@ case "awake":
     // Lid, power and display facts plus what the persisted stay-awake mode
     // would do with them. Does not hold anything itself.
     let context = PowerSampler.context()
-    let mode = AwakeMode(rawValue: UserDefaults.standard.string(forKey: "awakeMode") ?? "") ?? .off
+    // The menu bar app persists the mode in its bundle domain. Run through the ~/.local/bin
+    // symlink, UserDefaults.standard resolves no bundle and always read "off"; read the domain.
+    let defaults = UserDefaults(suiteName: "dev.ancplua.vitals") ?? .standard
+    let mode = AwakeMode(rawValue: defaults.string(forKey: "awakeMode") ?? "") ?? .off
     let decision = Awake.decide(mode: mode, context: context)
     Printer.out("context   \(Awake.describe(context)) · lid-close sleeps: \(context.lidClosesSleep)")
     Printer.out("mode      \(mode.rawValue) · \(decision.reason) · lid-close override \(decision.overrideLidSleep ? "wanted" : "not wanted")")

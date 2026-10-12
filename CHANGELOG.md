@@ -4,6 +4,10 @@ Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest e
 
 ## Unreleased
 
+### Fixed
+- `vitals awake` printed `off` whatever the menu bar held: through the `~/.local/bin`
+  symlink `UserDefaults.standard` had no bundle domain. It reads `dev.ancplua.vitals` now.
+
 ### Removed
 - The Fable subagent gate: `hooks/fable-subagent-gate.sh`, its `PreToolUse(Agent)`
   registration in `install.sh`, its test, and the spawn tally that read its log
