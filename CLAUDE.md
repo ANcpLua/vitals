@@ -1,4 +1,5 @@
 # Vitals
+remake and merge it into https://github.com/ANcpLua/vitals/blob/3be3f4c7be5c42749efb80d9ace9ee645b39931b/AGENTS.md AGENTS.md 
 
 Native Swift macOS menu-bar app. Repository https://github.com/ANcpLua/vitals,
 standalone since 2026-09-05 (before: `tools/vitals` in example-owner/example-repo).
