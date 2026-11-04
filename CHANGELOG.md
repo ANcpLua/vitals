@@ -1,6 +1,6 @@
 # Changelog — Vitals
 
-Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest entry first.
+find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Newest entry first.
 
 ## Unreleased
 
