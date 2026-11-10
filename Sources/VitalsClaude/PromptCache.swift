@@ -276,6 +276,41 @@ public enum PromptCacheScanner {
     public static let subagentWindow: TimeInterval = 30 * 60
     public static let maxSubagents = 3
 
+    /// Claude Code reads `AGENTS.md` only while its built-in AGENTS.md plugin
+    /// is switched on in `settings.json`.
+    public static func agentsFilesLoaded(settings: Data?) -> Bool {
+        let object = settings.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let plugins = object["enabledPlugins"] as? [String: Any] ?? [:]
+        return plugins["cc-plugin-agents-md@builtin"] as? Bool == true
+    }
+
+    /// The instruction files a session reads at its start: user scope first,
+    /// then the project's.
+    public static func instructionFiles(home: ClaudeHome, cwd: String, agentsFiles: Bool) -> [URL] {
+        let project = URL(fileURLWithPath: cwd)
+        var files = [
+            home.root.appendingPathComponent("CLAUDE.md"),
+            project.appendingPathComponent("CLAUDE.md"),
+            project.appendingPathComponent("CLAUDE.local.md"),
+            project.appendingPathComponent(".claude/CLAUDE.md")
+        ]
+        if agentsFiles {
+            files.insert(home.root.appendingPathComponent("AGENTS.md"), at: 1)
+            files.append(project.appendingPathComponent("AGENTS.md"))
+        }
+        return files
+    }
+
+    /// A link counts by its target: `~/.claude/AGENTS.md` is usually a link
+    /// into a dotfiles checkout, and an edit there leaves the link untouched.
+    public static func edited(_ files: [URL], after date: Date) -> Bool {
+        files.contains { url in
+            let values = try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.contentModificationDateKey])
+            guard let modified = values?.contentModificationDate else { return false }
+            return modified > date
+        }
+    }
+
     public static func scan(
         _ session: ClaudeSession, home: ClaudeHome, config: CacheTTLConfig, now: Date
     ) -> SessionCache {
@@ -297,16 +332,13 @@ public enum PromptCacheScanner {
             subagents.append(SubagentCache(id: id, label: label(meta: directory.appendingPathComponent("\(id).meta.json"), id: id), cache: cache))
         }
         subagents.sort { $0.cache.lastRequestAt > $1.cache.lastRequestAt }
-        let instructions = [
-            home.root.appendingPathComponent("CLAUDE.md"),
-            URL(fileURLWithPath: session.cwd).appendingPathComponent("CLAUDE.md"),
-            URL(fileURLWithPath: session.cwd).appendingPathComponent("CLAUDE.local.md"),
-            URL(fileURLWithPath: session.cwd).appendingPathComponent(".claude/CLAUDE.md")
-        ]
-        let instructionsEdited = instructions.contains { url in
-            guard let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else { return false }
-            return date > session.startedAt
-        }
+        let instructionsEdited = edited(
+            instructionFiles(
+                home: home, cwd: session.cwd,
+                agentsFiles: agentsFilesLoaded(settings: try? Data(contentsOf: home.settingsURL))
+            ),
+            after: session.startedAt
+        )
         return SessionCache(
             main: main,
             subagents: Array(subagents.prefix(maxSubagents)),
@@ -369,7 +401,7 @@ public enum PromptCacheText {
     }
 
     /// One hint at most, in this order: a large cold session, a pending
-    /// upgrade, a change that just forced a re-read, an edited CLAUDE.md.
+    /// upgrade, a change that just forced a re-read, an edited instruction file.
     /// A cold cache re-reads everything anyway, so it gets no re-read hint.
     public static func hint(_ cache: PromptCache?, runningVersion: String?, instructionsEdited: Bool, now: Date) -> String? {
         guard let cache else { return nil }
@@ -393,5 +425,5 @@ public enum PromptCacheText {
         return instructionsEdited ? instructionsHint : nil
     }
 
-    static let instructionsHint = "CLAUDE.md edited: cache kept, applies after /clear, /compact or a restart"
+    static let instructionsHint = "instructions edited: cache kept, applies after /clear, /compact or a restart"
 }

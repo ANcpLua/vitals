@@ -16,6 +16,9 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
   it was still running: the registry is only rewritten when the status changes. It
   stays listed now while its process started when the record says it did; the
   24 hour cut-off remains for records that cannot be confirmed that way.
+- The "CLAUDE.md edited" hint ignored `AGENTS.md`, which Claude Code reads while its
+  built-in AGENTS.md plugin is on, and an edit behind a link such as
+  `~/.claude/AGENTS.md`. Both count now, and the hint says "instructions edited".
 - Claude Code installed by the native installer appeared in the process table as its
   version number (`2.1.321`), because the executable is
   `~/.local/share/claude/versions/<version>`. It is named `claude` again, and the
