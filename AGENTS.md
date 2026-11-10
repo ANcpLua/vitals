@@ -35,7 +35,8 @@ commands and examples against source, push, and wait for CI; reinstalling an
 unchanged binary is unnecessary.
 
 `swift build` starts its own sandbox. Inside an agent's command sandbox it fails with
-`sandbox-exec: sandbox_apply: Operation not permitted`; run the build outside it.
+`sandbox-exec: sandbox_apply: Operation not permitted`; run the build outside it
+(`pack.sh` does not pass SwiftPM's `--disable-sandbox`).
 
 Toolchain: Command Line Tools only, no Xcode, so no XCTest. Selftests are plain
 executables that `fail()` on the first broken expectation. The CI runner's Swift is
@@ -79,10 +80,16 @@ row and a submenu or their own panel.
   `~/.claude/sessions/<pid>.json`. Claude Code writes the kinds `interactive`, `bg`,
   `daemon` and `daemon-worker`; only the first two are sessions (`bg` is one its
   daemon hosts). A record with `parkedJobId` is the terminal a session left when it
-  moved to the background. Statuses are `busy`, `shell`, `idle` and `waiting`; Claude
-  Code shows `shell` as working and `waiting` as blocked on the user. The native
-  installer runs `~/.local/share/claude/versions/<version>`, so the kernel names the
-  process after the version number; `ProcessName` turns that back into `claude`.
+  moved to the background, and one with `spare` is a background process started
+  ahead of time that no session has claimed; both stay out, as in Claude Code's own
+  list. Statuses are `busy`, `shell`, `idle` and `waiting`; Claude Code shows `shell`
+  as working and `waiting` as blocked on the user. The record is only rewritten when
+  the status changes, so a session that idles for days is kept by comparing the
+  kernel's start time of its pid with `procStart` (`LC_ALL=C TZ=UTC ps -o lstart`);
+  the 24 hour cut-off is only for records that cannot be confirmed that way. The
+  native installer runs `~/.local/share/claude/versions/<version>`, so the kernel
+  names the process after the version number; `ProcessName` turns that back into
+  `claude`.
 - **Session burn** (`ClaudeBurn.swift`):
   per session the transcript
   `~/.claude/projects/<cwd with non-alphanumerics as dashes>/<sessionId>.jsonl`
@@ -131,7 +138,8 @@ row and a submenu or their own panel.
 
 ## Conventions
 
-- Commit: one short subject line, no body. Push to `main`, wait for CI.
+- Commit: one short subject line, no body. An agent's `Co-Authored-By` trailer is
+  fine, a session link is not. Push to `main`, wait for CI.
 - CHANGELOG under `## Unreleased`, Keep a Changelog style, one bullet per change.
 - No em dashes, no emoji in text shown to the user.
 - Don't run `vitals claude` in a loop: each call spends one of the usage
