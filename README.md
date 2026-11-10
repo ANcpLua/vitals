@@ -104,7 +104,10 @@ the probe is also bundled with the installed app. Each monitored repository keep
 its own `.github/workflows/credential-health.yml` independently of this Mac.
 
 Your personal registry is `~/.config/vitals/keys.json`, outside the app and Git
-checkout. After a successful load or save, Vitals keeps a validated, owner-only
+checkout, and nothing copies it into this repository: it names your accounts,
+projects and where each credential lives.
+[`examples/keys.example.json`](examples/keys.example.json) shows one made-up entry
+of each kind. After a successful load or save, Vitals keeps a validated, owner-only
 copy at `~/.config/vitals/keys.last-good.json`. Invalid or unreadable files never
 replace that copy. If the registry is deleted or corrupted, choose **Restore saved
 registry**, or run `vitals keys restore`. Recovery preserves a damaged original as
@@ -134,10 +137,10 @@ Builds `Vitals.app` in release mode with an ad-hoc signature, copies it to
 `~/Applications/Vitals.app`, writes the `dev.ancplua.vitals` LaunchAgent and
 (re)starts it. Run it again to update. Needs the Xcode Command Line Tools.
 
-It also links the CLI as `~/.local/bin/vitals`, installs the `vitals-keys` skill
-(`skills/vitals-keys/SKILL.md`) into `~/.claude/skills`, and keeps the registry and
-`examples/keys.ancplua.json` identical: an absent registry is created from that
-template, an existing one is written back into it for you to commit.
+It also links the CLI as `~/.local/bin/vitals` and installs the `vitals-keys` skill
+(`skills/vitals-keys/SKILL.md`) into `~/.claude/skills`. It never reads or writes
+the registry: on a Mac without one, `vitals keys init` writes a two-entry example
+to start from.
 
 ## Develop
 

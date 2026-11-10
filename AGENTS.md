@@ -22,8 +22,8 @@ build/swift/release/claude-selftest                 # telemetry parsing, alerts,
 build/swift/release/mcp-selftest
 build/Vitals.app/Contents/MacOS/vitals keys-menu-selftest # loading state and existing Claude authentication
 python3 scripts/test_credential_health.py
-python3 scripts/test_registry_template.py
-./install.sh                                        # build, copy to ~/Applications, (re)start the agent, link the CLI, install the skill, sync the registry template
+python3 scripts/test_example_registry.py
+./install.sh                                        # build, copy to ~/Applications, (re)start the agent, link the CLI, install the skill
 build/swift/release/vitals snapshot|claude|burn|keys|mcp|awake     # headless views, no menu needed
 build/swift/release/vitals sessions-preview <dir>   # renders the sessions view to PNG, live and with samples
 ```
@@ -125,11 +125,10 @@ row and a submenu or their own panel.
   See the setup guide for provider formats, remote workflow installation, and recovery.
   Agents register credentials in the registry through `skills/vitals-keys/SKILL.md`;
   edit the skill there, `install.sh` copies it to `~/.claude/skills`.
-- **Registry template**: `install.sh` writes the registry back into
-  `examples/keys.ancplua.json`; never edit the template by hand. This repository is
-  public, so read that diff before committing it: entry notes may name locations,
-  providers, repositories and non-secret resource ids, and nothing about accounts,
-  organizations, balances or billing.
+- **The registry stays on the Mac**: it names accounts, projects, repositories and
+  where each credential lives, and this repository is public. Nothing copies it
+  here. `examples/keys.example.json` holds one made-up entry per kind, and
+  `scripts/test_example_registry.py` fails when a real name, URL or id gets into it.
 - **launchd**: `launchctl bootout` returns before the service is gone; `install.sh`
   polls before `bootstrap`, otherwise bootstrap fails with I/O error 5 and Vitals
   is down.

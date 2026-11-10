@@ -1,0 +1,43 @@
+{
+  "$schema": "../schema/keys.schema.json",
+  "keys": [
+    {
+      "name": "Example service login",
+      "kind": "keychain",
+      "service": "example-service-token",
+      "account": "example",
+      "url": "https://example.com/account/tokens",
+      "note": "Use as EXAMPLE_SERVICE_TOKEN. A Keychain item; presence is read from its metadata, never its value."
+    },
+    {
+      "name": "Example API key",
+      "kind": "environment",
+      "variable": "EXAMPLE_API_KEY",
+      "url": "https://example.com/account/api-keys",
+      "note": "Use as EXAMPLE_API_KEY. Exported in the zsh rc files."
+    },
+    {
+      "name": "Example signing key",
+      "kind": "file",
+      "path": "~/.config/vitals/example-signing-key",
+      "note": "Use as EXAMPLE_SIGNING_KEY. An owner-only file; presence is its size, its content is never read."
+    },
+    {
+      "name": "Example deploy token",
+      "kind": "reference",
+      "reference": "GitHub Actions secret EXAMPLE_DEPLOY_TOKEN in owner/repo",
+      "url": "https://example.com/account/deploy-tokens",
+      "note": "Use as EXAMPLE_DEPLOY_TOKEN. A place Vitals cannot read; the workflow job below shows whether it still works.",
+      "remoteChecks": [
+        {
+          "repository": "owner/repo",
+          "secrets": [
+            "EXAMPLE_DEPLOY_TOKEN"
+          ],
+          "workflow": "credential-health.yml",
+          "job": "railway"
+        }
+      ]
+    }
+  ]
+}

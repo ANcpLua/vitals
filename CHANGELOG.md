@@ -27,6 +27,11 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
   symlink `UserDefaults.standard` had no bundle domain. It reads `dev.ancplua.vitals` now.
 
 ### Removed
+- The installer no longer writes the credential registry into this repository, and
+  `examples/keys.ancplua.json`, which held the owner's real entries, is gone with
+  `scripts/registry_template.py`. The registry names accounts, projects and where
+  every credential lives; it stays on the Mac. A Mac without one starts from
+  `vitals keys init`.
 - The Fable subagent gate: `hooks/fable-subagent-gate.sh`, its `PreToolUse(Agent)`
   registration in `install.sh`, its test, and the spawn tally that read its log
   (`SpawnCounts`, `AgentSpawns`, the `spawns` line of `vitals burn`).
@@ -52,12 +57,11 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
   while the menu is open. `vitals sessions-preview <dir>` renders the view.
 - Hovering the Claude status badge shows the unresolved incidents from the
   polled status summary as the incident page words them.
-- `install.sh` links the CLI as `~/.local/bin/vitals`, installs the `vitals-keys`
-  skill agents follow to register credentials, and keeps the registry and
-  `examples/keys.ancplua.json` identical: an absent registry is created from the
-  template, an existing one is written back into it.
-- Fresh-agent setup and recovery guide, an ANcpLua registry template containing
-  configuration only, and installer support for a Mac without a `.claude` directory.
+- `install.sh` links the CLI as `~/.local/bin/vitals` and installs the `vitals-keys`
+  skill agents follow to register credentials.
+- Fresh-agent setup and recovery guide, a made-up example registry with one entry
+  of each kind (`examples/keys.example.json`), and installer support for a Mac
+  without a `.claude` directory.
 - Versioned credential-registry JSON schema and validated owner-only recovery copy;
   explicit recovery preserves damaged files. Existing entries appear immediately
   during checks, read errors stay visible, and example creation cannot reset a registry.

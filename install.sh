@@ -24,10 +24,12 @@ done
 launchctl bootstrap "$domain" "$plist"
 "$app/Contents/MacOS/vitals" snapshot > /dev/null
 
-# What agents use: the CLI on PATH, the skill that tells them how to register
-# a credential, and the registry template kept identical to the registry.
+# What agents use: the CLI on PATH and the skill that tells them how to register
+# a credential. The registry itself stays on this Mac; nothing copies it here.
 mkdir -p "$HOME/.local/bin" "$HOME/.claude/skills/vitals-keys"
 ln -sf "$app/Contents/MacOS/vitals" "$HOME/.local/bin/vitals"
 cp skills/vitals-keys/SKILL.md "$HOME/.claude/skills/vitals-keys/SKILL.md"
-python3 scripts/registry_template.py
+if [ ! -e "$HOME/.config/vitals/keys.json" ]; then
+    echo "no credential registry yet: \`vitals keys\` says whether to run \`vitals keys init\` or \`vitals keys restore\`"
+fi
 echo "installed $app · agent $label running"
