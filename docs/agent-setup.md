@@ -97,21 +97,27 @@ repository secret metadata and Actions results. It is separate from the release
 token being tested inside CI. GitHub-hosted jobs keep provider values in GitHub;
 the Mac reads only names, update times and the dedicated job result.
 
-Which repository gets which provider job is the owner's own map. It names
-repositories, projects and operation ids, so it is a file on the Mac,
-`~/.config/vitals/health-workflows.json`, and not part of this public repository.
-[`../examples/health-workflows.example.json`](../examples/health-workflows.example.json)
-shows the shape with made-up names:
+Which repository gets which provider job is part of the registry: the
+`remoteChecks` of an entry. There is no second file. Entries that name the same
+repository and job count as one job.
 
-| Field | Meaning |
+| Field of a remote check | Meaning |
 | --- | --- |
-| `owner` | The GitHub owner of the monitored repositories. |
-| `repositories` | One entry per repository name: the list of its provider jobs. |
+| `repository` | The monitored repository, as `owner/name`. |
 | `job` | `railway`, `github`, `chrome`, `amo` or `edge`. |
 | `secrets` | The GitHub Actions secret names the job reads: `RAILWAY_TOKEN`; `RELEASE_TOKEN` with repository write access; `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `CWS_PUBLISHER_ID`; `AMO_JWT_ISSUER`, `AMO_JWT_SECRET`; `EDGE_API_KEY`, `EDGE_CLIENT_ID`. |
-| `variables` | Non-secret values written into the workflow, such as `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID` or `EDGE_OPERATION_ID`. |
+| `workflow` | `credential-health.yml`. A check that names another workflow is read for its results but is not generated. |
+| `variables` | Non-secret values written into the workflow: `RAILWAY_PROJECT_ID` and `RAILWAY_ENVIRONMENT_ID` for `railway`, `EDGE_OPERATION_ID` for `edge`. A value kept as a repository secret is listed under `secrets` instead. |
 
-For Railway, use a **project token** for the project and environment the map names,
+The script refuses a job that lacks what its probe needs, so a job that could only
+fail is never installed. Two spellings of a repository that differ in case are one
+repository.
+
+The menu bar app rewrites the registry every hour from the fields it knows. Install
+the build that knows a field (`./install.sh`) before writing that field: an older
+build drops it at its next rewrite, from `keys.json` and from `keys.last-good.json`.
+
+For Railway, use a **project token** for the project and environment the entry names,
 and verify those ids against Railway before creating a replacement. Account CLI
 login and project-token authentication are different paths. Diagnose billing
 separately from a token rejection. For store repositories, verify
@@ -122,8 +128,7 @@ List secret names with `gh secret list --repo OWNER/REPO`. For a needed replacem
 use `gh secret set SECRET_NAME --repo OWNER/REPO` with its secure prompt or protected
 stdin. Retain existing secrets that already authenticate successfully.
 
-If `.github/workflows/credential-health.yml` already exists and passes, retain it.
-For new or changed monitoring, review the map, then:
+For new or changed monitoring, review the entries' remote checks, then:
 
 ```bash
 vitals_ref=$(git rev-parse HEAD)
@@ -133,8 +138,15 @@ python3 scripts/install_health_workflows.py --ref "$vitals_ref" --apply
 ```
 
 The ref must be a pushed, tested, immutable Vitals commit. The first invocation
-only validates generated YAML with `actionlint`; `--apply` commits to every
-repository in the map. `--map PATH` reads another file.
+only validates generated YAML with `actionlint`. `--apply` commits to every
+repository the registry names whose workflow differs from the generated one and
+prints `already current` for the others. The commit carries the account's handle
+and its GitHub no-reply address, not the profile name or email. `--registry PATH`
+reads another file.
+
+Every workflow checks out Vitals at that ref. If the history of the Vitals
+repository is rewritten, the ref is gone and each monitored workflow fails at its
+checkout step: run the script again with a ref that exists.
 
 Each workflow runs every six hours, on a change to that workflow, and on manual
 dispatch. To verify now, use `gh workflow run credential-health.yml --repo OWNER/REPO`,

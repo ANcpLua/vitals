@@ -67,7 +67,8 @@ Optional entry fields configure checks:
     "repository": "owner/repo",
     "secrets": ["RAILWAY_TOKEN"],
     "workflow": "credential-health.yml",
-    "job": "railway"
+    "job": "railway",
+    "variables": { "RAILWAY_PROJECT_ID": "project id", "RAILWAY_ENVIRONMENT_ID": "environment id" }
   }]
 }
 ```

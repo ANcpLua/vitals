@@ -123,6 +123,9 @@ row and a submenu or their own panel.
   its existing usage poll. Values stay out of UI, logs, registry, examples, and Git.
   Load entries before starting asynchronous checks. Preserve the validated
   `keys.last-good.json`; `keys restore` is explicit and preserves corrupt originals.
+  The hourly stamp rewrites the registry from the typed model, so a field the running
+  build does not know is dropped: add a field to `Keys.swift` and the schema, install
+  that build, and only then write the field.
   See the setup guide for provider formats, remote workflow installation, and recovery.
   Agents register credentials in the registry through `skills/vitals-keys/SKILL.md`;
   edit the skill there, `install.sh` copies it to `~/.claude/skills`.
@@ -130,11 +133,11 @@ row and a submenu or their own panel.
   where each credential lives, and this repository is public. Nothing copies it
   here. `examples/keys.example.json` holds one made-up entry per kind, and
   `scripts/test_example_registry.py` only lets through fields that carry an example
-  marker. The same goes for the monitoring map (which repository gets which provider
-  job, with its project and operation ids): `scripts/install_health_workflows.py`
-  reads it from `~/.config/vitals/health-workflows.json`, and the Auth0 check takes
-  its tenant, endpoint and Keychain items from the registry entry's options. No
-  repository, project, tenant or id of the owner belongs in a tracked file.
+  marker. The registry is the only file: which repository gets which provider job,
+  with its project and operation ids, is the `remoteChecks` of its entries, and
+  `scripts/install_health_workflows.py` reads them from there. The Auth0 check takes
+  its tenant, endpoint and Keychain items from the entry's options. No repository,
+  project, tenant or id of the owner belongs in a tracked file.
 - **launchd**: `launchctl bootout` returns before the service is gone; `install.sh`
   polls before `bootstrap`, otherwise bootstrap fails with I/O error 5 and Vitals
   is down.

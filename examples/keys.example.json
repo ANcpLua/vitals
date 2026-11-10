@@ -23,19 +23,23 @@
       "note": "Use as EXAMPLE_SIGNING_KEY. An owner-only file; presence is its size, its content is never read."
     },
     {
-      "name": "Example deploy token",
+      "name": "Example Railway token",
       "kind": "reference",
-      "reference": "GitHub Actions secret EXAMPLE_DEPLOY_TOKEN in owner/repo",
+      "reference": "GitHub Actions secret RAILWAY_TOKEN in owner/repo",
       "url": "https://example.com/account/deploy-tokens",
-      "note": "Use as EXAMPLE_DEPLOY_TOKEN. A place Vitals cannot read; the workflow job below shows whether it still works.",
+      "note": "Use as RAILWAY_TOKEN. A place Vitals cannot read; the workflow job below shows whether it still works.",
       "remoteChecks": [
         {
           "repository": "owner/repo",
           "secrets": [
-            "EXAMPLE_DEPLOY_TOKEN"
+            "RAILWAY_TOKEN"
           ],
           "workflow": "credential-health.yml",
-          "job": "railway"
+          "job": "railway",
+          "variables": {
+            "RAILWAY_PROJECT_ID": "00000000-0000-4000-8000-000000000001",
+            "RAILWAY_ENVIRONMENT_ID": "00000000-0000-4000-8000-000000000002"
+          }
         }
       ]
     }

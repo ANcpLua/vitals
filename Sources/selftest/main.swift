@@ -468,13 +468,24 @@ print("ok    key register: flat JSON round-trips, presence without values, verif
 print("PASS  memoization verified: nothing re-read")
 
 // New monitoring metadata must survive the hourly presence stamp and JSON rewrite.
-let remoteJSON = #"{"keys":[{"name":"remote","kind":"reference","reference":"GitHub","remoteChecks":[{"repository":"owner/repo","secrets":["TOKEN"],"workflow":"credential-health.yml","job":"railway"}],"localCheck":{"provider":"chrome","clientFile":"~/client.json","options":{"CWS_ITEM_ID":"item"}}}]}"#
+let remoteJSON = #"{"keys":[{"name":"remote","kind":"reference","reference":"GitHub","remoteChecks":[{"repository":"owner/repo","secrets":["TOKEN"],"workflow":"credential-health.yml","job":"railway","variables":{"PROJECT_ID":"p1"}}],"localCheck":{"provider":"chrome","clientFile":"~/client.json","options":{"CWS_ITEM_ID":"item"}}}]}"#
 do {
     let decoded = try JSONDecoder().decode(KeyRegister.self, from: Data(remoteJSON.utf8))
     let encoded = try JSONEncoder().encode(decoded)
     let roundTrip = try JSONDecoder().decode(KeyRegister.self, from: encoded)
-    guard roundTrip == decoded, roundTrip.keys[0].remoteChecks?.first?.job == "railway" else {
+    guard roundTrip == decoded, roundTrip.keys[0].remoteChecks?.first?.job == "railway",
+          roundTrip.keys[0].remoteChecks?.first?.variables == ["PROJECT_ID": "p1"],
+          String(decoding: encoded, as: UTF8.self).contains("PROJECT_ID") else {
         fail("credential check metadata must survive rewriting the register")
+    }
+    // A check without variables is rewritten without them: no key, no null.
+    let plainJSON = #"{"keys":[{"name":"plain","kind":"reference","reference":"GitHub","remoteChecks":[{"repository":"owner/repo","secrets":["TOKEN"],"workflow":"credential-health.yml","job":"github"}]}]}"#
+    let plain = try JSONDecoder().decode(KeyRegister.self, from: Data(plainJSON.utf8))
+    let plainEncoded = try JSONEncoder().encode(plain)
+    guard plain.keys[0].remoteChecks?.first?.variables == nil,
+          !String(decoding: plainEncoded, as: UTF8.self).contains("variables"),
+          try JSONDecoder().decode(KeyRegister.self, from: plainEncoded) == plain else {
+        fail("a remote check without variables must be rewritten without them")
     }
     let bad = KeyAuthentication(label: "remote", state: "invalid", detail: "Credential rejected", checkedAt: "2026-09-24T00:00:00Z")
     let status = KeyStatus(entry: decoded.keys[0], presence: .present, authentication: [bad])

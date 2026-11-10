@@ -5,6 +5,9 @@ The registry of a Mac holds account, project and repository names. The file in
 every field has to carry an example marker, and no text may look like an id, an
 account, a token or a link to anything but example.com.
 """
+import sys
+sys.dont_write_bytecode = True
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -16,6 +19,16 @@ EXAMPLE = ROOT / 'examples/keys.example.json'
 SCHEMA = json.loads((ROOT / 'schema/keys.schema.json').read_text())
 ENTRY = SCHEMA['$defs']['entry']
 REMOTE = SCHEMA['$defs']['remoteCheck']
+spec = importlib.util.spec_from_file_location('generator', ROOT / 'scripts/install_health_workflows.py')
+generator = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(generator)
+
+# The names the public probe itself reads; they belong to the providers, not to an
+# owner. They are the ones the generator requires, and CWS_PUBLISHER_ID, which the
+# Chrome probe reads without needing it. No other name passes, whatever its prefix.
+PROBE_NAMES = '(?:' + '|'.join(sorted({name for names in generator.NEEDS.values() for name in names} | {'CWS_PUBLISHER_ID'})) + ')'
+EXAMPLE_NAME = r'EXAMPLE_[A-Z_]+|' + PROBE_NAMES
+MADE_UP_ID = r'00000000-0000-4000-8000-[0-9]{12}'
 
 # What each field of a made-up entry has to look like.
 MARKERS = {
@@ -24,8 +37,8 @@ MARKERS = {
     'account': r'example',
     'variable': r'EXAMPLE_[A-Z_]+',
     'path': r'~/\.config/vitals/example-[a-z-]+',
-    'reference': r'GitHub Actions secret EXAMPLE_[A-Z_]+ in owner/repo',
-    'note': r'Use as EXAMPLE_[A-Z_]+\. .+',
+    'reference': r'GitHub Actions secret (EXAMPLE_[A-Z_]+|' + PROBE_NAMES + r') in owner/repo',
+    'note': r'Use as (EXAMPLE_[A-Z_]+|' + PROBE_NAMES + r')\. .+',
 }
 UNREAL = {
     'an id': r'(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
@@ -60,15 +73,19 @@ def problems(entry):
     for check in entry.get('remoteChecks', []):
         if check.get('repository') != 'owner/repo':
             found.append('remote check names a repository')
-        if not all(re.fullmatch(r'EXAMPLE_[A-Z_]+', secret) for secret in check.get('secrets', [])):
+        if not all(re.fullmatch(EXAMPLE_NAME, secret) for secret in check.get('secrets', [])):
             found.append('remote check names a secret')
+        if not all(re.fullmatch(EXAMPLE_NAME, variable) for variable in check.get('variables', {})):
+            found.append('remote check names a variable')
+        if not all(re.fullmatch(MADE_UP_ID + r'|example[a-z-]*', value) for value in check.get('variables', {}).values()):
+            found.append('remote check carries a real-looking variable value')
         if check.get('workflow') != 'credential-health.yml':
             found.append('remote check names a workflow')
     if 'localCheck' in entry:
         found.append('local checks point at real credential files')
-    # The url and the workflow file name are checked exactly above.
+    # The url, the workflow file name and the variables are checked exactly above.
     rest = {name: value for name, value in entry.items() if name not in ('url', 'remoteChecks')}
-    rest['remoteChecks'] = [{name: value for name, value in check.items() if name != 'workflow'}
+    rest['remoteChecks'] = [{name: value for name, value in check.items() if name not in ('workflow', 'variables')}
                             for check in entry.get('remoteChecks', [])]
     for text in strings(rest):
         text = text.replace('~/.config/vitals/', '')
@@ -103,7 +120,9 @@ class ExampleRegistryTests(unittest.TestCase):
                     self.assertTrue(entry[field], f'{field} is empty')
                 self.assertNotIn('verifiedAt', entry, 'a check stamp belongs to one Mac')
                 for check in entry.get('remoteChecks', []):
-                    self.assertEqual(set(check), set(REMOTE['required']))
+                    self.assertLessEqual(set(REMOTE['required']), set(check))
+                    self.assertLessEqual(set(check), set(REMOTE['properties']))
+                    self.assertIsInstance(check.get('variables', {}), dict)
                     self.assertRegex(check['repository'], REMOTE['properties']['repository']['pattern'])
                     self.assertTrue(check['secrets'])
                     for field in ('workflow', 'job'):
@@ -135,11 +154,19 @@ class ExampleRegistryTests(unittest.TestCase):
             {'kind': 'keychain', 'service': 'example-token', 'account': 'jane'},
             {'kind': 'file', 'path': '~/.config/vitals/resend-key'},
             {'kind': 'reference', 'reference': 'GitHub Actions secret RAILWAY_TOKEN in acme/api'},
+            {'kind': 'reference', 'reference': 'GitHub Actions secret EDGE_ACMECORP_KEY in owner/repo'},
+            {'note': 'Use as AMO_JANEDOE_SECRET. Exported in the zsh rc files.'},
             {'url': 'https://railway.com/project/1'},
             {'remoteChecks': [{'repository': 'acme/api', 'secrets': ['EXAMPLE_TOKEN'],
                                'workflow': 'credential-health.yml', 'job': 'railway'}]},
-            {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['RAILWAY_TOKEN'],
+            {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['STRIPE_SECRET_KEY'],
                                'workflow': 'credential-health.yml', 'job': 'railway'}]},
+            {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['CWS_ACMECORP_PROD_SECRET'],
+                               'workflow': 'credential-health.yml', 'job': 'chrome'}]},
+            {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['RAILWAY_TOKEN'], 'workflow': 'credential-health.yml',
+                               'job': 'railway', 'variables': {'ACMECORP_BILLING_PROJECT_ID': 'example'}}]},
+            {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['RAILWAY_TOKEN'], 'workflow': 'credential-health.yml',
+                               'job': 'railway', 'variables': {'RAILWAY_PROJECT_ID': '7c1e5a90-3b4d-4f62-8a17-d09e6b2c4f58'}}]},
             {'localCheck': {'provider': 'chrome', 'clientFile': '~/client.json'}},
         ]
         for change in real:

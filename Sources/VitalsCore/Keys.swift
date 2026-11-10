@@ -7,6 +7,8 @@ public struct RemoteKeyCheck: Codable, Equatable, Sendable {
     public let secrets: [String]
     public let workflow: String
     public let job: String
+    /// Non-secret values the generated workflow needs, such as a project id.
+    public let variables: [String: String]?
 }
 
 public struct LocalKeyCheck: Codable, Equatable, Sendable {
