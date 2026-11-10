@@ -30,8 +30,9 @@ launchctl print "gui/$(id -u)/dev.ancplua.vitals"
 ```
 
 The installer builds and signs the app and installs the LaunchAgent. It links the CLI
-as `~/.local/bin/vitals` and installs the `vitals-keys` skill into `~/.claude/skills`.
-It leaves the registry (step 2) and the credential files in place. With the lid closed and Stay awake active, use the installer to restart;
+as `~/.local/bin/vitals` and installs the `vitals-keys` skill into
+`~/.claude/skills`. It leaves the registry (step 2) and the credential files in
+place. With the lid closed and Stay awake active, use the installer to restart;
 normal Quit clears the sleep override.
 
 Done: the snapshot exits successfully and launchd reports Vitals running.
@@ -45,7 +46,7 @@ public, so nothing copies it here and no entry of it belongs in a commit.
 | State | Your action |
 | --- | --- |
 | Valid registry | None. |
-| Neither registry nor recovery copy exists | Run `vitals keys init`. It writes a two-entry example; replace it entry by entry. |
+| Neither registry nor recovery copy exists | Restore `~/.config/vitals` from the Mac's backup if there is one. Otherwise run `vitals keys init`: it writes the Claude Code entry and one example entry; keep the first, replace the second, and add the rest. |
 | Registry absent or corrupt, valid recovery copy | Run `vitals keys restore`. |
 | Both copies unusable | Preserve them and recover from a Mac backup. If no backup exists, set the damaged files aside and run `vitals keys init`. |
 
@@ -157,7 +158,7 @@ and remote monitoring is scheduled. Report unresolved results individually; do n
 claim everything is authenticated when only file or secret presence was checked.
 
 Code and schema recovery comes from GitHub. Registry recovery uses the saved copy
-or the Mac's backup; no copy of it is kept in Git. Credential recovery needs
-Keychain/file backups or a new provider login. The disposable `key-health.json` cache can be rebuilt.
+or the Mac's backup; the repository no longer carries a copy. Credential recovery
+needs Keychain/file backups or a new provider login. The disposable `key-health.json` cache can be rebuilt.
 Deleting the whole `.config/vitals` directory removes both registry copies, so
 include it and the credential sources in the Mac's normal backup plan.

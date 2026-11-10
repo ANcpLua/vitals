@@ -128,7 +128,9 @@ row and a submenu or their own panel.
 - **The registry stays on the Mac**: it names accounts, projects, repositories and
   where each credential lives, and this repository is public. Nothing copies it
   here. `examples/keys.example.json` holds one made-up entry per kind, and
-  `scripts/test_example_registry.py` fails when a real name, URL or id gets into it.
+  `scripts/test_example_registry.py` only lets through fields that carry an example
+  marker. The repositories and ids in `scripts/install_health_workflows.py` and in
+  the setup guide's monitoring table are a separate, hand-kept list.
 - **launchd**: `launchctl bootout` returns before the service is gone; `install.sh`
   polls before `bootstrap`, otherwise bootstrap fails with I/O error 5 and Vitals
   is down.

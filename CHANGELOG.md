@@ -28,10 +28,10 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ### Removed
 - The installer no longer writes the credential registry into this repository, and
-  `examples/keys.ancplua.json`, which held the owner's real entries, is gone with
-  `scripts/registry_template.py`. The registry names accounts, projects and where
-  every credential lives; it stays on the Mac. A Mac without one starts from
-  `vitals keys init`.
+  `scripts/registry_template.py` is gone. The registry names accounts, projects and
+  where every credential lives, so it stays on the Mac; `examples/` now carries a
+  made-up `keys.example.json` in place of a registry copy. A Mac without a registry
+  restores it from its backup or starts from `vitals keys init`.
 - The Fable subagent gate: `hooks/fable-subagent-gate.sh`, its `PreToolUse(Agent)`
   registration in `install.sh`, its test, and the spawn tally that read its log
   (`SpawnCounts`, `AgentSpawns`, the `spawns` line of `vitals burn`).
