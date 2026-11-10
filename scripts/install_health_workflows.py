@@ -24,6 +24,9 @@ NEEDS = {
     'edge': ('EDGE_API_KEY', 'EDGE_CLIENT_ID', 'EDGE_OPERATION_ID'),
 }
 PROVIDERS = tuple(NEEDS)
+# Names the workflow fills in itself: the repository for the GitHub probe, and the
+# store ids that --config reads from the monitored repository. A job cannot set them.
+FILLED_IN = ('CHECK_REPOSITORY', 'CWS_ITEM_ID', 'EDGE_PRODUCT_ID')
 REPOSITORY = r'[A-Za-z0-9][A-Za-z0-9-]*/(?!\.{1,2}$)[A-Za-z0-9._-]+'
 VARIABLE = r'[A-Z][A-Z0-9_]*'
 
@@ -31,10 +34,10 @@ VARIABLE = r'[A-Z][A-Z0-9_]*'
 def load_jobs(path):
     """Per repository (owner/name), its provider jobs, collected from every entry's remoteChecks.
 
-    Entries that share a repository and a job are one job: their secrets are joined in
-    the order first seen and their variables are merged and sorted by name, so the
-    order of keys in the file changes nothing. GitHub ignores case in a repository's
-    name, so two spellings are one repository and the first spelling is used.
+    Entries that share a repository and a job are one job. Its secrets and variables
+    are merged and put in name order, so neither the order of entries nor the order
+    inside an entry changes the workflow. GitHub ignores case in a repository's name,
+    so two spellings are one repository and the first spelling is used.
     Raises ValueError with the reason.
     """
     try:
@@ -68,8 +71,8 @@ def load_jobs(path):
                 raise ValueError(f'{name}: "job" must be one of {", ".join(PROVIDERS)}')
             if not isinstance(secrets, list) or not secrets or not all(isinstance(secret, str) and re.fullmatch(VARIABLE, secret) for secret in secrets):
                 raise ValueError(f'{name}: "secrets" must list secret names')
-            if not isinstance(variables, dict) or not all(re.fullmatch(VARIABLE, key) and isinstance(value, str) for key, value in variables.items()):
-                raise ValueError(f'{name}: "variables" must map names to text')
+            if not isinstance(variables, dict) or not all(re.fullmatch(VARIABLE, key) and isinstance(value, str) and value for key, value in variables.items()):
+                raise ValueError(f'{name}: "variables" must map names to non-empty text')
             if any('${{' in value for value in variables.values()):
                 raise ValueError(f'{name}: a variable is plain text, not a workflow expression')
             spelling, jobs = repositories.setdefault(repository.lower(), (repository, {}))
@@ -84,11 +87,15 @@ def load_jobs(path):
         raise ValueError(f'no entry in {path} has a remote check for {WORKFLOW}')
     for spelling, jobs in repositories.values():
         for provider, job in jobs.items():
-            if set(job['variables']) & (set(job['secrets']) | {'CHECK_REPOSITORY'}):
-                raise ValueError(f'{spelling} {provider}: a variable may not reuse the name of a secret or CHECK_REPOSITORY')
+            taken = [name for name in FILLED_IN if name in job['secrets'] or name in job['variables']]
+            if taken:
+                raise ValueError(f'{spelling} {provider}: the workflow fills in {", ".join(taken)} itself, so it cannot be a secret or a variable')
+            if set(job['variables']) & set(job['secrets']):
+                raise ValueError(f'{spelling} {provider}: a variable may not reuse the name of a secret')
             missing = [name for name in NEEDS[provider] if name not in job['secrets'] and name not in job['variables']]
             if missing:
                 raise ValueError(f'{spelling} {provider}: the probe needs {", ".join(missing)}, as a secret or as a variable')
+            job['secrets'].sort()
             job['variables'] = dict(sorted(job['variables'].items()))
     return {spelling: [jobs[provider] for provider in PROVIDERS if provider in jobs] for spelling, jobs in repositories.values()}
 
@@ -165,8 +172,8 @@ def api(path, payload=None):
 def committer():
     """The account's handle with its GitHub no-reply address.
 
-    Left to itself GitHub writes the profile name and the account's email into a
-    commit made through its API, whatever identity git uses on this Mac.
+    Left to itself GitHub fills in the account's profile name and the email the
+    account shows, whatever identity git uses on this Mac.
     """
     user = api('user')
     return {'name': user['login'], 'email': f'{user["id"]}+{user["login"]}@users.noreply.github.com'}

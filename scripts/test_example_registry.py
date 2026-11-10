@@ -77,8 +77,10 @@ def problems(entry):
             found.append('remote check names a secret')
         if not all(re.fullmatch(EXAMPLE_NAME, variable) for variable in check.get('variables', {})):
             found.append('remote check names a variable')
-        if not all(re.fullmatch(MADE_UP_ID + r'|example[a-z-]*', value) for value in check.get('variables', {}).values()):
+        if not all(re.fullmatch(MADE_UP_ID, value) for value in check.get('variables', {}).values()):
             found.append('remote check carries a real-looking variable value')
+        if check.get('job') not in generator.PROVIDERS:
+            found.append('remote check names a job')
         if check.get('workflow') != 'credential-health.yml':
             found.append('remote check names a workflow')
     if 'localCheck' in entry:
@@ -164,7 +166,11 @@ class ExampleRegistryTests(unittest.TestCase):
             {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['CWS_ACMECORP_PROD_SECRET'],
                                'workflow': 'credential-health.yml', 'job': 'chrome'}]},
             {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['RAILWAY_TOKEN'], 'workflow': 'credential-health.yml',
-                               'job': 'railway', 'variables': {'ACMECORP_BILLING_PROJECT_ID': 'example'}}]},
+                               'job': 'railway', 'variables': {'ACMECORP_BILLING_PROJECT_ID': '00000000-0000-4000-8000-000000000001'}}]},
+            {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['RAILWAY_TOKEN'], 'workflow': 'credential-health.yml',
+                               'job': 'railway', 'variables': {'RAILWAY_PROJECT_ID': 'example-acmecorp-billing'}}]},
+            {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['RAILWAY_TOKEN'],
+                               'workflow': 'credential-health.yml', 'job': 'acmecorp-billing-prod'}]},
             {'remoteChecks': [{'repository': 'owner/repo', 'secrets': ['RAILWAY_TOKEN'], 'workflow': 'credential-health.yml',
                                'job': 'railway', 'variables': {'RAILWAY_PROJECT_ID': '7c1e5a90-3b4d-4f62-8a17-d09e6b2c4f58'}}]},
             {'localCheck': {'provider': 'chrome', 'clientFile': '~/client.json'}},

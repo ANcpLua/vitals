@@ -87,11 +87,17 @@ class HealthWorkflowTests(unittest.TestCase):
         self.assertEqual(list(jobs), ['Owner/Extension'])
         self.assertEqual([job['job'] for job in jobs['Owner/Extension']], ['chrome', 'amo'])
 
-    def test_the_order_of_keys_in_the_file_changes_nothing(self):
+    def test_order_in_the_registry_does_not_change_the_workflow(self):
         one = self.load(self.registry([check(variables={'RAILWAY_PROJECT_ID': 'p', 'RAILWAY_ENVIRONMENT_ID': 'e'})]))
         other = self.load(self.registry([check(variables={'RAILWAY_ENVIRONMENT_ID': 'e', 'RAILWAY_PROJECT_ID': 'p'})]))
         self.assertEqual(list(one['owner/repo'][0]['variables']), ['RAILWAY_ENVIRONMENT_ID', 'RAILWAY_PROJECT_ID'])
         self.assertEqual(g.workflow(one['owner/repo'], SHA), g.workflow(other['owner/repo'], SHA))
+        # Entries in another order, and secrets in another order inside an entry.
+        first = [check('owner/extension', 'chrome', ['CWS_CLIENT_SECRET', 'CWS_CLIENT_ID'])]
+        second = [check('owner/extension', 'chrome', ['CWS_REFRESH_TOKEN', 'CWS_PUBLISHER_ID'])]
+        forward, backward = self.load(self.registry(first, second)), self.load(self.registry(second, first))
+        self.assertEqual(forward['owner/extension'][0]['secrets'], ['CWS_CLIENT_ID', 'CWS_CLIENT_SECRET', 'CWS_PUBLISHER_ID', 'CWS_REFRESH_TOKEN'])
+        self.assertEqual(g.workflow(forward['owner/extension'], SHA), g.workflow(backward['owner/extension'], SHA))
 
     def test_a_job_that_lacks_what_its_probe_needs_is_refused(self):
         for made, reason in [
@@ -104,12 +110,13 @@ class HealthWorkflowTests(unittest.TestCase):
                     self.load(self.registry([made]))
         # The ids may be repository secrets instead of variables.
         as_secrets = self.load(self.registry([check(variables={})]))['owner/repo'][0]
-        self.assertEqual(as_secrets, {'job': 'railway', 'secrets': list(g.NEEDS['railway']), 'variables': {}})
+        self.assertEqual(as_secrets, {'job': 'railway', 'secrets': sorted(g.NEEDS['railway']), 'variables': {}})
 
     def test_needs_is_what_each_probe_requires_before_it_asks_the_provider(self):
         # What the workflow adds itself: the repository for the GitHub probe, and the
         # store id that --config reads from the monitored repository.
         added = {'github': {'CHECK_REPOSITORY': 'owner/repo'}, 'edge': {'EDGE_PRODUCT_ID': 'product'}}
+        self.assertEqual({name for names in added.values() for name in names} | {'CWS_ITEM_ID'}, set(g.FILLED_IN))
         for provider, names in g.NEEDS.items():
             full = dict({name: 'value' for name in names}, **added.get(provider, {}))
             with patch.object(h, 'request', side_effect=h.ProbeError('unavailable')) as request:
@@ -121,7 +128,7 @@ class HealthWorkflowTests(unittest.TestCase):
                     self.assertIn(state, ('missing', 'unchecked'))
                     request.assert_not_called()
 
-    def test_workflow_has_one_job_per_entry_with_its_secrets_and_variables(self):
+    def test_workflow_has_one_job_per_provider_with_its_secrets_and_variables(self):
         jobs = self.load(self.registry([
             check('owner/extension', 'chrome'), check('owner/extension', 'amo'),
             check('owner/extension', 'edge', variables={'EDGE_OPERATION_ID': '00000000-0000-4000-8000-000000000003'}),
@@ -164,7 +171,11 @@ class HealthWorkflowTests(unittest.TestCase):
             (self.registry([check(secrets=['lower-case'])]), 'secret names'),
             (self.registry([check(variables={'ID': 7})]), 'variables'),
             (self.registry([check(secrets=['RAILWAY_TOKEN'], variables={'RAILWAY_TOKEN': 'x'})]), 'reuse'),
-            (self.registry([check(variables={'CHECK_REPOSITORY': 'x'})]), 'reuse'),
+            (self.registry([check(variables={'RAILWAY_PROJECT_ID': ''})]), 'non-empty'),
+            (self.registry([check(variables={'CHECK_REPOSITORY': 'x'})]), 'fills in CHECK_REPOSITORY itself'),
+            (self.registry([check(job='github', secrets=['RELEASE_TOKEN', 'CHECK_REPOSITORY'])]), 'fills in CHECK_REPOSITORY itself'),
+            (self.registry([check(job='edge', variables={'EDGE_OPERATION_ID': 'op', 'EDGE_PRODUCT_ID': 'p'})]), 'fills in EDGE_PRODUCT_ID itself'),
+            (self.registry([check(job='chrome', secrets=list(g.NEEDS['chrome']) + ['CWS_ITEM_ID'])]), 'fills in CWS_ITEM_ID itself'),
             (self.registry([check(variables={'ID': '${{ secrets.OTHER }}'})]), 'expression'),
             (self.registry([check(variables={'ID': 'a'})], [check(variables={'ID': 'b'})]), 'different values'),
         ]:

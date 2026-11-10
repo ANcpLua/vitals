@@ -30,21 +30,21 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
 - The monitoring map (which repository gets which provider job, with its project and
   operation ids) moved out of `scripts/install_health_workflows.py` into the registry:
   a remote check may carry `variables`, the script reads the jobs from the entries'
-  remote checks, and `--registry` reads another file. One file holds everything; the
-  example registry shows a remote check with variables. Install this build before
+  remote checks, and `--registry` reads another file. No second file is needed on the
+  Mac; the example registry shows a remote check with variables. Install this build before
   writing `variables`: an older build rewrites the registry every hour and drops the
   field. The Auth0 check takes its tenant, MCP endpoint and Keychain items from the
   registry entry's options (`AUTH0_DOMAIN`, `MCP_URL`, `MCP_REFRESH_SERVICE`,
   `MCP_CLIENT_ID_SERVICE`, `MCP_KEYCHAIN_ACCOUNT`) and asks nothing while one is
   missing.
 - `scripts/install_health_workflows.py` refuses a job that lacks what its probe needs
-  (for example an `edge` job without `EDGE_OPERATION_ID`), so a job that could only
-  fail is never installed. Two spellings of a repository that differ in case are one
-  repository, and variables are written in name order, so the order of keys in the
-  registry changes nothing.
+  (for example an `edge` job without `EDGE_OPERATION_ID`) and a job that sets a name
+  the workflow fills in itself. Two spellings of a repository that differ in case are
+  one repository, and secrets and variables are written in name order, so the order
+  of entries in the registry does not change a workflow.
 - `scripts/install_health_workflows.py --apply` commits as the account's handle with
-  its GitHub no-reply address. Before, GitHub filled in the profile name and the
-  account's email.
+  its GitHub no-reply address. Before, GitHub filled in the account's profile name
+  and the email it shows.
 
 ### Removed
 - The installer no longer writes the credential registry into this repository, and

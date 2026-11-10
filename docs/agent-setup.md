@@ -109,9 +109,11 @@ repository and job count as one job.
 | `workflow` | `credential-health.yml`. A check that names another workflow is read for its results but is not generated. |
 | `variables` | Non-secret values written into the workflow: `RAILWAY_PROJECT_ID` and `RAILWAY_ENVIRONMENT_ID` for `railway`, `EDGE_OPERATION_ID` for `edge`. A value kept as a repository secret is listed under `secrets` instead. |
 
-The script refuses a job that lacks what its probe needs, so a job that could only
-fail is never installed. Two spellings of a repository that differ in case are one
-repository.
+The script refuses a job that lacks what its probe needs, and a job that sets a name
+the workflow fills in itself (`CHECK_REPOSITORY`, `CWS_ITEM_ID`, `EDGE_PRODUCT_ID`).
+Two spellings of a repository that differ in case are one repository. Secrets and
+variables are written in name order, so the order of entries in the registry does
+not change a workflow.
 
 The menu bar app rewrites the registry every hour from the fields it knows. Install
 the build that knows a field (`./install.sh`) before writing that field: an older
@@ -138,15 +140,16 @@ python3 scripts/install_health_workflows.py --ref "$vitals_ref" --apply
 ```
 
 The ref must be a pushed, tested, immutable Vitals commit. The first invocation
-only validates generated YAML with `actionlint`. `--apply` commits to every
-repository the registry names whose workflow differs from the generated one and
-prints `already current` for the others. The commit carries the account's handle
-and its GitHub no-reply address, not the profile name or email. `--registry PATH`
-reads another file.
+only validates generated YAML with `actionlint`. `--apply` commits to each
+repository that has a `credential-health.yml` remote check and whose workflow file
+differs from the generated one, and prints `already current` for the others. The
+file belongs to the script: a hand-edited `credential-health.yml` is replaced. The
+commit carries the account's handle and its GitHub no-reply address, not the
+profile name or email. `--registry PATH` reads another file.
 
 Every workflow checks out Vitals at that ref. If the history of the Vitals
-repository is rewritten, the ref is gone and each monitored workflow fails at its
-checkout step: run the script again with a ref that exists.
+repository is rewritten, that commit can disappear, and each monitored workflow
+then fails at its checkout step: run the script again with a ref that exists.
 
 Each workflow runs every six hours, on a change to that workflow, and on manual
 dispatch. To verify now, use `gh workflow run credential-health.yml --repo OWNER/REPO`,
