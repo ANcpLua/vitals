@@ -26,6 +26,15 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
 - `vitals awake` printed `off` whatever the menu bar held: through the `~/.local/bin`
   symlink `UserDefaults.standard` had no bundle domain. It reads `dev.ancplua.vitals` now.
 
+### Changed
+- The monitoring map (which repository gets which provider job, with its project and
+  operation ids) moved out of `scripts/install_health_workflows.py` into a file on
+  the Mac, `~/.config/vitals/health-workflows.json`; `--map` reads another one and
+  `examples/health-workflows.example.json` shows the shape. The Auth0 check takes its
+  tenant, MCP endpoint and Keychain items from the registry entry's options
+  (`AUTH0_DOMAIN`, `MCP_URL`, `MCP_REFRESH_SERVICE`, `MCP_CLIENT_ID_SERVICE`,
+  `MCP_KEYCHAIN_ACCOUNT`) and asks nothing while one is missing.
+
 ### Removed
 - The installer no longer writes the credential registry into this repository, and
   `scripts/registry_template.py` is gone. The registry names accounts, projects and

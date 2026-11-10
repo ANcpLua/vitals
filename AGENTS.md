@@ -23,6 +23,7 @@ build/swift/release/mcp-selftest
 build/Vitals.app/Contents/MacOS/vitals keys-menu-selftest # loading state and existing Claude authentication
 python3 scripts/test_credential_health.py
 python3 scripts/test_example_registry.py
+python3 scripts/test_health_workflows.py
 ./install.sh                                        # build, copy to ~/Applications, (re)start the agent, link the CLI, install the skill
 build/swift/release/vitals snapshot|claude|burn|keys|mcp|awake     # headless views, no menu needed
 build/swift/release/vitals sessions-preview <dir>   # renders the sessions view to PNG, live and with samples
@@ -129,8 +130,11 @@ row and a submenu or their own panel.
   where each credential lives, and this repository is public. Nothing copies it
   here. `examples/keys.example.json` holds one made-up entry per kind, and
   `scripts/test_example_registry.py` only lets through fields that carry an example
-  marker. The repositories and ids in `scripts/install_health_workflows.py` and in
-  the setup guide's monitoring table are a separate, hand-kept list.
+  marker. The same goes for the monitoring map (which repository gets which provider
+  job, with its project and operation ids): `scripts/install_health_workflows.py`
+  reads it from `~/.config/vitals/health-workflows.json`, and the Auth0 check takes
+  its tenant, endpoint and Keychain items from the registry entry's options. No
+  repository, project, tenant or id of the owner belongs in a tracked file.
 - **launchd**: `launchctl bootout` returns before the service is gone; `install.sh`
   polls before `bootstrap`, otherwise bootstrap fails with I/O error 5 and Vitals
   is down.

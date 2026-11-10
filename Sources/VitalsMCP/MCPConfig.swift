@@ -68,7 +68,7 @@ public enum MCPStatus: String, Sendable, Equatable {
 }
 
 public struct MCPServer: Sendable, Equatable, Identifiable {
-    /// Exactly the name Claude Code uses (`example`, `plugin:playwright:playwright`).
+    /// Exactly the name Claude Code uses (`github`, `plugin:playwright:playwright`).
     public let name: String
     public let scope: MCPScope
     public let transport: MCPTransport

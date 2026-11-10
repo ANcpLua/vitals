@@ -136,16 +136,24 @@ def probe(provider, env):
             request('https://api.addons.microsoftedge.microsoft.com/v1/products/' + product + '/submissions/operations/' + operation,
                     {'Authorization': 'ApiKey ' + key, 'X-ClientID': client})
         elif provider == 'auth0':
+            # Which tenant, which MCP server and which Keychain item belong to the registry
+            # entry's options. Without all of them nothing is requested: a rotated refresh
+            # token that could not be saved would be lost.
+            domain, endpoint = env.get('AUTH0_DOMAIN', ''), env.get('MCP_URL', '')
+            service, account = env.get('MCP_REFRESH_SERVICE'), env.get('MCP_KEYCHAIN_ACCOUNT')
+            if not (re.fullmatch(r'[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+', domain) and re.fullmatch(r'https://[^\s/?#]+(/\S*)?', endpoint)
+                    and service and account):
+                return result('unchecked', 'Hosted MCP check needs AUTH0_DOMAIN, MCP_URL, MCP_REFRESH_SERVICE and MCP_KEYCHAIN_ACCOUNT options')
             refresh, client = require(env, 'MCP_REFRESH_TOKEN', 'MCP_CLIENT_ID')
-            data = request('https://tenant.example.com/oauth/token', body={
+            data = request('https://' + domain + '/oauth/token', body={
                 'grant_type': 'refresh_token', 'refresh_token': refresh, 'client_id': client})
             # Store rotated credentials before any further request so a failed probe cannot lose them.
             if data.get('refresh_token') and data['refresh_token'] != refresh:
-                write_keychain('example-refresh-item', 'example', data['refresh_token'])
+                write_keychain(service, account, data['refresh_token'])
             access = data.get('access_token')
             if not access:
                 raise ProbeError('invalid')
-            response = request('https://mcp.example.com/mcp', {
+            response = request(endpoint, {
                 'Authorization': 'Bearer ' + access, 'Accept': 'application/json, text/event-stream',
                 'MCP-Protocol-Version': env.get('MCP_PROTOCOL_VERSION', '2026-07-28'), 'Mcp-Method': 'server/discover'},
                 {'jsonrpc': '2.0', 'id': 1, 'method': 'server/discover', 'params': {'_meta': {
@@ -276,8 +284,10 @@ def local_environment(spec):
     if spec.get('refreshFile'):
         env['CWS_REFRESH_TOKEN'] = Path(spec['refreshFile']).expanduser().read_text().strip()
     if spec.get('provider') == 'auth0':
-        env['MCP_REFRESH_TOKEN'] = keychain('example-refresh-item', 'example')
-        env['MCP_CLIENT_ID'] = keychain('example-client-id-item', 'example')
+        account = env.get('MCP_KEYCHAIN_ACCOUNT')
+        if account and env.get('MCP_REFRESH_SERVICE') and env.get('MCP_CLIENT_ID_SERVICE'):
+            env['MCP_REFRESH_TOKEN'] = keychain(env['MCP_REFRESH_SERVICE'], account)
+            env['MCP_CLIENT_ID'] = keychain(env['MCP_CLIENT_ID_SERVICE'], account)
     if spec.get('keychainService'):
         service = spec['keychainService']
         env['AMO_JWT_SECRET'] = keychain(service)

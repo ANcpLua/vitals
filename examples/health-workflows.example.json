@@ -1,0 +1,53 @@
+{
+  "owner": "owner",
+  "repositories": {
+    "service": [
+      {
+        "job": "railway",
+        "secrets": [
+          "RAILWAY_TOKEN"
+        ],
+        "variables": {
+          "RAILWAY_PROJECT_ID": "00000000-0000-4000-8000-000000000001",
+          "RAILWAY_ENVIRONMENT_ID": "00000000-0000-4000-8000-000000000002"
+        }
+      }
+    ],
+    "library": [
+      {
+        "job": "github",
+        "secrets": [
+          "RELEASE_TOKEN"
+        ]
+      }
+    ],
+    "extension": [
+      {
+        "job": "chrome",
+        "secrets": [
+          "CWS_CLIENT_ID",
+          "CWS_CLIENT_SECRET",
+          "CWS_REFRESH_TOKEN",
+          "CWS_PUBLISHER_ID"
+        ]
+      },
+      {
+        "job": "amo",
+        "secrets": [
+          "AMO_JWT_ISSUER",
+          "AMO_JWT_SECRET"
+        ]
+      },
+      {
+        "job": "edge",
+        "secrets": [
+          "EDGE_API_KEY",
+          "EDGE_CLIENT_ID"
+        ],
+        "variables": {
+          "EDGE_OPERATION_ID": "00000000-0000-4000-8000-000000000003"
+        }
+      }
+    ]
+  }
+}

@@ -76,12 +76,11 @@ files should have mode `0600`. The supported formats below come from
 | Microsoft Edge | `~/.config/vitals/store-secrets.env` defines `EDGE_API_KEY` and `EDGE_CLIENT_ID`. Local check options hold `EDGE_PRODUCT_ID` and an actual prior successful `EDGE_OPERATION_ID`. | Read-only GET of that publishing operation succeeds. A missing/expired operation or 404 is not proof of a bad credential; recover a real operation ID from the publishing workflow. |
 | Firefox AMO, file | The same env file defines nonempty `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`. Use literal `NAME=value` or `export NAME='value'` lines; shell expansion is not evaluated. | Signed profile request succeeds. An existing env file with empty assignments is insufficient. |
 | Firefox AMO, Keychain | Service `AMO API (addons.mozilla.org)`: account is the JWT issuer, password is the JWT secret. | The separate Keychain profile request succeeds. Both this and the file entry must be checked. |
-| example hosted MCP | Hosted MCP login supplies Keychain services `example-refresh-item` and `example-client-id-item`, both with account `example`. | Refresh exchange and authenticated `server/discover` succeed. |
+| Hosted MCP server behind Auth0 | Two Keychain items hold the refresh token and the client id of a hosted MCP login. The entry's local check options name them and the endpoints: `AUTH0_DOMAIN`, `MCP_URL`, `MCP_REFRESH_SERVICE`, `MCP_CLIENT_ID_SERVICE` and `MCP_KEYCHAIN_ACCOUNT`. | Refresh exchange and authenticated `server/discover` succeed. |
 
-The `auth0` adapter is specific to `tenant.example.com` and `mcp.example.com`; its
-Keychain services and URLs are fixed in the helper. A different tenant requires an
-adapter change, not just a registry rename. A rotated refresh token is saved before
-the MCP request. Check the helper's default protocol revision against the deployed
+The `auth0` check asks nothing until its options are complete, because a rotated
+refresh token is saved to the named Keychain item before the MCP request and would
+otherwise be lost. Check the helper's default protocol revision against the deployed
 server when diagnosing protocol errors; `MCP_PROTOCOL_VERSION` is an optional
 non-secret local check option.
 
@@ -98,19 +97,24 @@ repository secret metadata and Actions results. It is separate from the release
 token being tested inside CI. GitHub-hosted jobs keep provider values in GitHub;
 the Mac reads only names, update times and the dedicated job result.
 
-The ANcpLua repository mapping and exact required secret names are in `REPOS` in
-[`../scripts/install_health_workflows.py`](../scripts/install_health_workflows.py):
+Which repository gets which provider job is the owner's own map. It names
+repositories, projects and operation ids, so it is a file on the Mac,
+`~/.config/vitals/health-workflows.json`, and not part of this public repository.
+[`../examples/health-workflows.example.json`](../examples/health-workflows.example.json)
+shows the shape with made-up names:
 
-| Repositories | Provider job / required GitHub secrets |
+| Field | Meaning |
 | --- | --- |
-| `example-owner/example-repo` | `railway`: `RAILWAY_TOKEN` |
-| `example-owner/example-repo`, `example-owner/example-repo` | `github`: `RELEASE_TOKEN` with repository write access |
-| `example-owner/example-repo`, `example-owner/example-repo` | `chrome`: `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `CWS_PUBLISHER_ID`; `amo`: `AMO_JWT_ISSUER`, `AMO_JWT_SECRET`; `edge`: `EDGE_API_KEY`, `EDGE_CLIENT_ID` |
+| `owner` | The GitHub owner of the monitored repositories. |
+| `repositories` | One entry per repository name: the list of its provider jobs. |
+| `job` | `railway`, `github`, `chrome`, `amo` or `edge`. |
+| `secrets` | The GitHub Actions secret names the job reads: `RAILWAY_TOKEN`; `RELEASE_TOKEN` with repository write access; `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `CWS_PUBLISHER_ID`; `AMO_JWT_ISSUER`, `AMO_JWT_SECRET`; `EDGE_API_KEY`, `EDGE_CLIENT_ID`. |
+| `variables` | Non-secret values written into the workflow, such as `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID` or `EDGE_OPERATION_ID`. |
 
-For Railway, use a **project token** for example and production. Verify the expected
-project/environment IDs in `REPOS` against Railway before creating a replacement.
-Account CLI login and project-token authentication are different paths. Diagnose
-billing separately from a token rejection. For the store repositories, verify
+For Railway, use a **project token** for the project and environment the map names,
+and verify those ids against Railway before creating a replacement. Account CLI
+login and project-token authentication are different paths. Diagnose billing
+separately from a token rejection. For store repositories, verify
 `store.config.json` has the Chrome/Edge product IDs and that the configured Edge
 operation IDs still identify real operations.
 
@@ -119,7 +123,7 @@ use `gh secret set SECRET_NAME --repo OWNER/REPO` with its secure prompt or prot
 stdin. Retain existing secrets that already authenticate successfully.
 
 If `.github/workflows/credential-health.yml` already exists and passes, retain it.
-For new or changed monitoring, review the generator's repository mapping, then:
+For new or changed monitoring, review the map, then:
 
 ```bash
 vitals_ref=$(git rev-parse HEAD)
@@ -129,9 +133,8 @@ python3 scripts/install_health_workflows.py --ref "$vitals_ref" --apply
 ```
 
 The ref must be a pushed, tested, immutable Vitals commit. The first invocation
-only validates generated YAML with `actionlint`; `--apply` commits to all five
-configured repositories. For other accounts, adapt both the generator's owner/
-repositories and the registry; this script is deliberately specific to ANcpLua.
+only validates generated YAML with `actionlint`; `--apply` commits to every
+repository in the map. `--map PATH` reads another file.
 
 Each workflow runs every six hours, on a change to that workflow, and on manual
 dispatch. To verify now, use `gh workflow run credential-health.yml --repo OWNER/REPO`,

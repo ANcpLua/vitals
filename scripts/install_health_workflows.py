@@ -1,21 +1,56 @@
-"""Install the reviewed, pinned, read-only workflows for the registered repositories."""
+"""Install the reviewed, pinned, read-only workflows for the repositories in the owner's map."""
 import argparse
 import base64
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
-REPOS = {
-    'example.mcp': [('railway', ['RAILWAY_TOKEN'], {'RAILWAY_PROJECT_ID': '00000000-0000-0000-0000-000000000002', 'RAILWAY_ENVIRONMENT_ID': '00000000-0000-0000-0000-000000000003'})],
-    'example.OpenTelemetry.AutoInstrumentation': [('github', ['RELEASE_TOKEN'], {})],
-    'example.OpenTelemetry.SemanticConventions': [('github', ['RELEASE_TOKEN'], {})],
-    'example-repo': [('chrome', ['CWS_CLIENT_ID', 'CWS_CLIENT_SECRET', 'CWS_REFRESH_TOKEN', 'CWS_PUBLISHER_ID'], {}), ('amo', ['AMO_JWT_ISSUER', 'AMO_JWT_SECRET'], {}), ('edge', ['EDGE_API_KEY', 'EDGE_CLIENT_ID'], {'EDGE_OPERATION_ID': '00000000-0000-0000-0000-000000000004'})],
-    'example-repo': [('chrome', ['CWS_CLIENT_ID', 'CWS_CLIENT_SECRET', 'CWS_REFRESH_TOKEN', 'CWS_PUBLISHER_ID'], {}), ('amo', ['AMO_JWT_ISSUER', 'AMO_JWT_SECRET'], {}), ('edge', ['EDGE_API_KEY', 'EDGE_CLIENT_ID'], {'EDGE_OPERATION_ID': '00000000-0000-0000-0000-000000000006'})],
-}
+# Which repository gets which provider job is the owner's own map. It names
+# repositories, projects and operation ids, so it lives on the Mac, outside this
+# public repository. `examples/health-workflows.example.json` shows the shape.
+MAP = Path.home() / '.config/vitals/health-workflows.json'
+VITALS = 'ANcpLua/vitals'
+PROVIDERS = ('railway', 'github', 'chrome', 'amo', 'edge')
+NAME = r'[A-Za-z0-9][A-Za-z0-9._-]*'
+VARIABLE = r'[A-Z][A-Z0-9_]*'
+
+
+def load_map(path):
+    """The owner and, per repository, its provider jobs; raises ValueError with the reason."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except FileNotFoundError:
+        raise ValueError(f'no monitoring map at {path}: copy examples/health-workflows.example.json there and fill it in')
+    except json.JSONDecodeError as error:
+        raise ValueError(f'{path} is not JSON: {error}')
+    owner, repositories = data.get('owner'), data.get('repositories')
+    if not isinstance(owner, str) or not re.fullmatch(NAME, owner):
+        raise ValueError('"owner" must be the GitHub owner of the monitored repositories')
+    if not isinstance(repositories, dict) or not repositories:
+        raise ValueError('"repositories" must map at least one repository name to its jobs')
+    for repo, jobs in repositories.items():
+        if not re.fullmatch(NAME, repo) or not isinstance(jobs, list) or not jobs:
+            raise ValueError(f'{repo!r} needs a repository name and a list of jobs')
+        for job in jobs:
+            if not isinstance(job, dict) or job.get('job') not in PROVIDERS:
+                raise ValueError(f'{repo}: "job" must be one of {", ".join(PROVIDERS)}')
+            secrets, variables = job.get('secrets'), job.get('variables', {})
+            if not isinstance(secrets, list) or not secrets or not all(isinstance(name, str) and re.fullmatch(VARIABLE, name) for name in secrets):
+                raise ValueError(f'{repo} {job["job"]}: "secrets" must list secret names')
+            if not isinstance(variables, dict) or not all(re.fullmatch(VARIABLE, name) and isinstance(value, str) for name, value in variables.items()):
+                raise ValueError(f'{repo} {job["job"]}: "variables" must map names to text')
+            if set(job) - {'job', 'secrets', 'variables'}:
+                raise ValueError(f'{repo} {job["job"]}: only "job", "secrets" and "variables" are read')
+        if len({job['job'] for job in jobs}) != len(jobs):
+            raise ValueError(f'{repo}: each job may appear once')
+    return owner, repositories
+
+
 CHECKOUT = '3d3c42e5aac5ba805825da76410c181273ba90b1'
 
-def workflow(repo, sha):
+def workflow(jobs, sha):
     text = '''name: Credential health
 on:
   workflow_dispatch:
@@ -30,7 +65,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
 '''
-    for provider, secrets, options in REPOS[repo]:
+    for job in jobs:
+        provider, secrets, options = job['job'], job['secrets'], job.get('variables', {})
         text += f'''  {provider}:
     name: {provider}
     runs-on: ubuntu-latest
@@ -38,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@{CHECKOUT}
         with:
-          repository: ANcpLua/vitals
+          repository: {VITALS}
           ref: {sha}
           path: .vitals
           sparse-checkout: Sources/VitalsKernel/credential_health.py
@@ -84,19 +120,24 @@ def api(path, payload=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--ref', required=True)
+    parser.add_argument('--map', default=MAP, help='the monitoring map (default: %(default)s)')
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args()
     if len(args.ref) != 40 or any(c not in '0123456789abcdef' for c in args.ref):
         raise ValueError('Use an immutable 40-character commit SHA')
-    for repo in REPOS:
-        content = workflow(repo, args.ref)
+    try:
+        owner, repositories = load_map(args.map)
+    except ValueError as error:
+        parser.exit(2, f'{error}\n')
+    for repo, jobs in repositories.items():
+        content = workflow(jobs, args.ref)
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yml') as f:
             f.write(content); f.flush()
             subprocess.run(['actionlint', f.name], check=True)
         if not args.apply:
             print(repo + ': workflow validated')
             continue
-        endpoint = f'repos/ANcpLua/{repo}/contents/.github/workflows/credential-health.yml'
+        endpoint = f'repos/{owner}/{repo}/contents/.github/workflows/credential-health.yml'
         p = subprocess.run(['gh', 'api', endpoint], capture_output=True, text=True)
         payload = {'message': 'ci: monitor credentials with read-only scheduled checks', 'content': base64.b64encode(content.encode()).decode()}
         if p.returncode == 0:
