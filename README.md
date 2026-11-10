@@ -30,6 +30,13 @@ tokens per minute. The usage bars show what the endpoint reports and nothing
 more: no forecast, because a rate measured over a 15-minute burst says
 nothing about the hours ahead, and the 5-hour window already stops a burst.
 
+The list holds terminal sessions and the ones Claude Code's daemon hosts in the
+background. A session that waits for you, at a permission prompt or a question,
+turns amber and is counted in the Sessions row (`1 busy · 1 waiting · 2 idle`);
+its tooltip says what it waits for. An idle session stays listed while its
+process runs; a record that does not say when its process started drops out
+after 24 idle hours.
+
 ## API keys
 
 `~/.config/vitals/keys.json` indexes credential locations, never their values.

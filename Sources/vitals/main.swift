@@ -104,9 +104,9 @@ case "claude":
             Printer.out("usage     \(row.label.padding(toLength: 22, withPad: " ", startingAt: 0))\(row.detail)")
         }
         let sessions = ClaudeSessionStore.load()
-        Printer.out("sessions  \(sessions.sessions.count) local · \(sessions.busyCount) busy  (\(ClaudeHome().sessionsDirectory.path))")
+        Printer.out("sessions  \(sessions.sessions.count) local · \(sessions.summary)  (\(ClaudeHome().sessionsDirectory.path))")
         for session in sessions.sessions {
-            Printer.out("  \(session.status.rawValue.padding(toLength: 5, withPad: " ", startingAt: 0)) \(session.name.padding(toLength: 20, withPad: " ", startingAt: 0)) \(Format.age(since: session.startedAt).padding(toLength: 9, withPad: " ", startingAt: 0)) \(session.abbreviatedCwd())")
+            Printer.out("  \(session.status.rawValue.padding(toLength: 7, withPad: " ", startingAt: 0)) \(session.name.padding(toLength: 20, withPad: " ", startingAt: 0)) \(Format.age(since: session.startedAt).padding(toLength: 9, withPad: " ", startingAt: 0)) \(session.abbreviatedCwd())")
         }
         semaphore.signal()
     }
@@ -208,7 +208,8 @@ case "mcp":
 case "sessions-preview":
     // Renders the sessions view to PNG: `live.png` from this Mac's sessions
     // (transcripts, the desktop app's PR store, gh, one process sample) and
-    // `samples.png` with warm, expiring, cold and an auto-fix PR whose CI fails.
+    // `samples.png` with warm, a background session waiting for input, expiring,
+    // cold and an auto-fix PR whose CI fails.
     // Never calls the usage endpoint.
     guard let raw = arguments.dropFirst().first else {
         Printer.err("usage: vitals sessions-preview <directory>")

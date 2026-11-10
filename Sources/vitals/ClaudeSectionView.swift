@@ -72,7 +72,7 @@ struct ClaudeSectionModel: Equatable {
     }
 
     func autoFixState(_ session: ClaudeSession) -> AutoFixState? {
-        autoFix[session.pid].map { AutoFix.state($0, busy: session.status == .busy) }
+        autoFix[session.pid].map { AutoFix.state($0, busy: session.status.isWorking) }
     }
 
     /// Lines under the registry line: auto-fix details, the prompt cache,
@@ -321,11 +321,10 @@ final class ClaudeSectionView: NSView {
         }
 
         let sessions = model.sessions
-        let busy = sessions.busyCount
-        sessionsDetail.stringValue = sessions.sessions.isEmpty
-            ? "none running"
-            : "\(busy) busy · \(sessions.sessions.count - busy) idle"
-        sessionsDetail.textColor = busy > 0 ? Palette.blue : Palette.secondary
+        sessionsDetail.stringValue = sessions.summary
+        sessionsDetail.textColor = sessions.waitingCount > 0
+            ? Palette.amber
+            : sessions.busyCount > 0 ? Palette.blue : Palette.secondary
         copyAllLabel.isHidden = sessions.sessions.isEmpty
         for (view, session) in zip(sessionRows, model.visibleSessions) {
             view.update(
@@ -420,6 +419,9 @@ final class ClaudeSessionRowView: NSView {
         ageLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .medium)
         ageLabel.textColor = Palette.secondary
         ageLabel.alignment = .right
+        // The end of the label carries calls and context; if it ever outgrows
+        // its width, the status word gives way, never the numbers.
+        ageLabel.lineBreakMode = .byTruncatingHead
 
         addSubview(dot)
         addSubview(nameLabel)
@@ -446,7 +448,8 @@ final class ClaudeSessionRowView: NSView {
         self.lines = lines
         let color: NSColor
         switch session.status {
-        case .busy: color = Palette.blue
+        case .busy, .shell: color = Palette.blue
+        case .waiting: color = Palette.amber
         case .idle: color = Palette.mint
         case .unknown: color = Palette.secondary
         }
@@ -455,7 +458,9 @@ final class ClaudeSessionRowView: NSView {
         cwdLabel.stringValue = session.abbreviatedCwd()
         let rate = burn.map { $0.short == "idle" ? "" : " · \($0.short)" } ?? ""
         ageLabel.stringValue = "\(session.status.rawValue) · \(Format.age(since: session.startedAt, now: now))\(rate)"
-        ageLabel.textColor = session.status == .busy ? Palette.blue : Palette.secondary
+        ageLabel.textColor = session.status.isWorking
+            ? Palette.blue
+            : session.status == .waiting ? Palette.amber : Palette.secondary
 
         if let autoFix {
             let (fix, state) = autoFix
@@ -494,6 +499,7 @@ final class ClaudeSessionRowView: NSView {
         }
 
         toolTip = "pid \(session.pid) · \(session.cwd)\nsession \(session.sessionId)"
+            + "\n\(session.displayKind) · \(session.statusText)"
             + (session.version.map { "\nClaude Code \($0)" } ?? "")
             + (burn.map { "\n\($0.long)" } ?? "")
             + (cacheTooltip.map { "\n\($0)" } ?? "")
@@ -507,7 +513,7 @@ final class ClaudeSessionRowView: NSView {
         let top = bounds.height - ClaudeSectionModel.sessionRowHeight
         let ageWidth = min(
             ceil((ageLabel.stringValue as NSString).size(withAttributes: [.font: ageLabel.font as Any]).width) + 4,
-            160
+            168
         )
         let nameWidth = min(
             ceil((nameLabel.stringValue as NSString).size(
@@ -624,11 +630,16 @@ enum SessionsPreview {
         try png.write(to: url)
     }
 
-    /// Warm, about to expire, cold, and an auto-fix PR whose CI fails.
+    /// Warm, a background session waiting for input, about to expire, cold,
+    /// and an auto-fix PR whose CI fails.
     static func samples(now: Date, telemetry: ClaudeTelemetrySnapshot) -> ClaudeSectionModel {
-        func session(_ pid: Int32, _ name: String, _ cwd: String, _ status: ClaudeSession.Status, hours: Double) -> ClaudeSession {
-            ClaudeSession(pid: pid, sessionId: "sample-\(pid)", name: name, status: status, cwd: cwd,
-                          startedAt: now.addingTimeInterval(-hours * 3_600), updatedAt: now, version: "2.1.292")
+        func session(
+            _ pid: Int32, _ name: String, _ cwd: String, _ status: ClaudeSession.Status, hours: Double,
+            kind: String = "interactive", waitingFor: String? = nil
+        ) -> ClaudeSession {
+            ClaudeSession(pid: pid, sessionId: "sample-\(pid)", name: name, kind: kind, status: status, cwd: cwd,
+                          startedAt: now.addingTimeInterval(-hours * 3_600), updatedAt: now, version: "2.1.292",
+                          waitingFor: waitingFor)
         }
         func cache(ttl: TimeInterval, ago: TimeInterval, requests: Int, misses: Int = 0, repaid: Int = 0,
                    cause: PromptCache.MissCause? = nil, hit: Double, prompt: Int) -> PromptCache {
@@ -638,6 +649,8 @@ enum SessionsPreview {
         }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let warm = session(41_001, "vitals sessions view", home + "/Developer/vitals", .busy, hours: 1)
+        let waiting = session(41_005, "Nightly analyzer run", home + "/Projects/example-tool", .waiting, hours: 2,
+                              kind: "bg", waitingFor: "input needed")
         let expiring = session(41_002, "Example rename", home + "/Projects/example-tool", .idle, hours: 5)
         let cold = session(41_003, "Example session", home + "/Projects/example-tool", .idle, hours: 16)
         let failing = session(41_004, "Example change", home + "/Projects/example-tool", .idle, hours: 16)
@@ -645,7 +658,7 @@ enum SessionsPreview {
         let pr = BoundPullRequest(number: 700, repo: "example-org/example-tool", branch: "bugfix/example-branch", baseRef: "develop")
         return ClaudeSectionModel(
             telemetry: telemetry,
-            sessions: ClaudeSessionsSnapshot(sessions: [warm, expiring, cold, failing], capturedAt: now),
+            sessions: ClaudeSessionsSnapshot(sessions: [warm, waiting, expiring, cold, failing], capturedAt: now),
             now: now,
             caches: [
                 warm.pid: SessionCache(

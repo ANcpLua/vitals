@@ -233,6 +233,60 @@ do {
     try write("4242.json", """
         {"pid":4242,"sessionId":"cloud","cwd":"/","startedAt":\(nowMillis),"kind":"cloud","name":"Opus comparison","status":"idle"}
         """)
+    try write("3001.json", """
+        {"pid":3001,"sessionId":"bg01","cwd":"/Users/ancplua","startedAt":\(nowMillis - 600_000),"kind":"bg","jobId":"bg01",
+         "name":"Setup health check","status":"waiting","waitingFor":"input needed","updatedAt":\(nowMillis - 2_000)}
+        """)
+    try write("3002.json", """
+        {"pid":3002,"sessionId":"bg01","cwd":"/Users/ancplua","startedAt":\(nowMillis - 700_000),"kind":"interactive",
+         "parkedJobId":"bg01","name":"parked terminal","status":"idle"}
+        """)
+    try write("3003.json", """
+        {"pid":3003,"sessionId":"sup","cwd":"/","startedAt":\(nowMillis),"kind":"daemon","name":"supervisor","status":"idle"}
+        """)
+    try write("3004.json", """
+        {"pid":3004,"sessionId":"worker","cwd":"/","startedAt":\(nowMillis),"kind":"daemon-worker","name":"pty host","status":"busy"}
+        """)
+    try write("3005.json", """
+        {"pid":3005,"sessionId":"sh05","cwd":"/Users/ancplua","startedAt":\(nowMillis - 900_000),"kind":"interactive",
+         "name":"shell-one","status":"shell"}
+        """)
+    // A process the daemon started ahead of time, a newer idle session whose
+    // waitingFor has the wrong JSON type, a record whose parkedJobId is not a
+    // string (absent to Claude Code, so not parked), and one without a status.
+    try write("3006.json", """
+        {"pid":3006,"sessionId":"sp06","cwd":"/","startedAt":\(nowMillis),"kind":"bg","jobId":"sp06","spare":true}
+        """)
+    try write("3007.json", """
+        {"pid":3007,"sessionId":"id07","cwd":"/Users/ancplua","startedAt":\(nowMillis - 60_000),"kind":"interactive",
+         "name":"fresh-idle","status":"idle","waitingFor":7}
+        """)
+    try write("3008.json", """
+        {"pid":3008,"sessionId":"pk08","cwd":"/Users/ancplua","startedAt":\(nowMillis - 90_000),"kind":"interactive","parkedJobId":5,
+         "name":"numeric job id","status":"idle"}
+        """)
+    try write("3009.json", """
+        {"pid":3009,"sessionId":"un09","cwd":"/Users/ancplua","startedAt":\(nowMillis - 30_000),"kind":"interactive","name":"no-status"}
+        """)
+    // Idle for three days: listed while the process started when the record
+    // says it did, gone when another process holds the pid.
+    let longAgo = registryNow.addingTimeInterval(-4 * 86_400)
+    let lstart = DateFormatter()
+    lstart.locale = Locale(identifier: "en_US_POSIX")
+    lstart.timeZone = TimeZone(secondsFromGMT: 0)
+    lstart.dateFormat = "EEE MMM d HH:mm:ss yyyy"
+    for (pid, name) in [(3010, "three days idle"), (3011, "reused pid")] {
+        try write("\(pid).json", """
+            {"pid":\(pid),"sessionId":"old\(pid)","cwd":"/Users/ancplua","startedAt":\(nowMillis - 4 * 86_400_000),
+             "updatedAt":\(nowMillis - 3 * 86_400_000),"kind":"bg","name":"\(name)","status":"idle",
+             "procStart":"\(lstart.string(from: longAgo))"}
+            """)
+    }
+    // The same age without a recorded process start: the 24 hour rule applies.
+    try write("3012.json", """
+        {"pid":3012,"sessionId":"old3012","cwd":"/Users/ancplua","startedAt":\(nowMillis - 4 * 86_400_000),
+         "updatedAt":\(nowMillis - 3 * 86_400_000),"kind":"interactive","name":"no recorded start","status":"idle"}
+        """)
     try write("1.json", "not json")
     try write("notes.json", """
         {"pid":1,"sessionId":"x","cwd":"/","startedAt":\(nowMillis)}
@@ -240,13 +294,51 @@ do {
     let registry = ClaudeSessionStore.load(
         home: ClaudeHome(root: sessionsRoot),
         now: registryNow,
-        isAlive: { $0 != 9999 }
+        isAlive: { $0 != 9999 },
+        processStart: { pid in
+            switch pid {
+            case 3010, 3012: longAgo.addingTimeInterval(1)
+            case 3011: longAgo.addingTimeInterval(600)
+            default: nil
+            }
+        }
     )
     expect(
-        registry.sessions.map { $0.name } == ["example-app-1", "ancplua-bd"],
-        "session registry did not filter dead, cloud, malformed entries or sort busy-first: \(registry.sessions.map { $0.name })"
+        registry.sessions.map { $0.name }
+            == ["example-app-1", "shell-one", "Setup health check", "no-status", "fresh-idle", "numeric job id", "ancplua-bd", "three days idle"],
+        "session registry did not filter dead, cloud, parked, spare, daemon, malformed, stale entries or sort working, waiting, rest: \(registry.sessions.map { $0.name })"
     )
-    expect(registry.busyCount == 1, "busy session count is wrong")
+    expect(registry.busyCount == 2, "busy and shell sessions both count as busy: \(registry.busyCount)")
+    expect(registry.waitingCount == 1, "waiting session count is wrong: \(registry.waitingCount)")
+    expect(registry.summary == "2 busy · 1 waiting · 5 idle", "sessions summary: \(registry.summary)")
+    expect(
+        registry.sessions.first { $0.pid == 3007 }?.statusText == "idle",
+        "a waitingFor of the wrong JSON type must read as absent, not hide the session"
+    )
+    let paddedStart = try ClaudeSessionParser.parse(
+        Data(#"{"pid":7,"sessionId":"s","cwd":"/","startedAt":1,"procStart":"Tue Nov  3 02:38:36 2026"}"#.utf8)
+    )
+    expect(
+        paddedStart?.processStartedAt == Date(timeIntervalSince1970: 1_793_673_516),
+        "procStart is the ps lstart layout in UTC, day padded with a space: \(String(describing: paddedStart?.processStartedAt))"
+    )
+    let unreadableStart = try ClaudeSessionParser.parse(
+        Data(#"{"pid":7,"sessionId":"s","cwd":"/","startedAt":1,"procStart":"yesterday"}"#.utf8)
+    )
+    expect(
+        unreadableStart != nil && unreadableStart?.processStartedAt == nil,
+        "an unreadable procStart is absent, not an error"
+    )
+    let impossibleStart = try ClaudeSessionParser.parse(
+        Data(#"{"pid":7,"sessionId":"s","cwd":"/","startedAt":1,"procStart":"Tue Nov 31 25:61:61 2026"}"#.utf8)
+    )
+    expect(impossibleStart != nil && impossibleStart?.processStartedAt == nil, "a date that does not exist is absent, not rolled over")
+    let background = registry.sessions.first { $0.pid == 3001 }
+    expect(
+        background?.kind == "bg" && background?.displayKind == "background"
+            && background?.status == .waiting && background?.statusText == "waiting: input needed",
+        "a background session keeps its kind and says what it waits for: \(String(describing: background))"
+    )
     expect(
         registry.sessions.first?.abbreviatedCwd(homeDirectory: "/Users/ancplua")
             == "~/example-org/example-app"
@@ -262,6 +354,12 @@ do {
         now: registryNow
     )
     expect(emptyRegistry.sessions.isEmpty, "missing sessions directory did not yield an empty snapshot")
+    expect(emptyRegistry.summary == "none running", "empty sessions summary: \(emptyRegistry.summary)")
+    expect(
+        ClaudeSessionsSnapshot(sessions: registry.sessions.filter { $0.status != .waiting }, capturedAt: registryNow).summary
+            == "2 busy · 5 idle",
+        "the waiting part must only appear when a session waits"
+    )
 
     let textSession = ClaudeSession(
         pid: 64779,
@@ -282,7 +380,13 @@ do {
     expect(
         ClaudeSessionText.lines(registry.sessions)
             == "example-app-1  ·  interactive  ·  busy  ·  pid 2663  ·  /Users/ancplua/example-org/example-app  ·  session b30104f9  ·  Claude Code 2.1.239\n"
-            + "ancplua-bd  ·  interactive  ·  idle  ·  pid 1274  ·  /Users/ancplua  ·  session f2b61b80\n",
+            + "shell-one  ·  interactive  ·  shell  ·  pid 3005  ·  /Users/ancplua  ·  session sh05\n"
+            + "Setup health check  ·  background  ·  waiting: input needed  ·  pid 3001  ·  /Users/ancplua  ·  session bg01\n"
+            + "no-status  ·  interactive  ·  unknown  ·  pid 3009  ·  /Users/ancplua  ·  session un09\n"
+            + "fresh-idle  ·  interactive  ·  idle  ·  pid 3007  ·  /Users/ancplua  ·  session id07\n"
+            + "numeric job id  ·  interactive  ·  idle  ·  pid 3008  ·  /Users/ancplua  ·  session pk08\n"
+            + "ancplua-bd  ·  interactive  ·  idle  ·  pid 1274  ·  /Users/ancplua  ·  session f2b61b80\n"
+            + "three days idle  ·  background  ·  idle  ·  pid 3010  ·  /Users/ancplua  ·  session old3010\n",
         "session clipboard text does not list every session, one per line, version optional"
     )
 
@@ -411,9 +515,15 @@ do {
     let arguments: [Int32: [String]] = [
         10: ["/Applications/Claude.app/Contents/Helpers/disclaimer", "--pgroup", "--", "/x/claude", "--resume=c1"],
         11: ["/x/claude.app/Contents/MacOS/claude", "--output-format", "stream-json", "--resume=c1"],
-        12: ["/x/claude.app/Contents/MacOS/claude", "--output-format", "stream-json"]
+        12: ["/x/claude.app/Contents/MacOS/claude", "--output-format", "stream-json"],
+        13: ["/Users/ancplua/.local/share/claude/versions/2.1.321", "--session-id", "c3"],
+        14: ["/opt/other/versions/2.1.321", "--session-id", "c4"],
+        15: ["/Users/ancplua/.local/share/claude/versions/helper", "--session-id", "c5"]
     ]
     expect(AutoFixMatch.pid(cliSessionId: "c1", arguments: arguments) == 11, "pid from --resume, not the disclaimer wrapper")
+    expect(AutoFixMatch.pid(cliSessionId: "c3", arguments: arguments) == 13, "the native installer's versions/<version> executable is claude")
+    expect(AutoFixMatch.pid(cliSessionId: "c4", arguments: arguments) == nil, "another tool's versions folder is not claude")
+    expect(AutoFixMatch.pid(cliSessionId: "c5", arguments: arguments) == nil, "only a version-numbered file under claude/versions is claude")
     let fresh = DesktopCodeSession(localId: "local_2", cliSessionId: "c2", prs: [BoundPullRequest(number: 5, repo: "o/r")])
     let registry = [ClaudeSession(pid: 12, sessionId: "c2", name: "n", status: .idle, cwd: "/", startedAt: Date(), updatedAt: Date(), version: nil, hostSessionId: "local_2")]
     let matched = AutoFixMatch.sessions(records: [record!, fresh], registry: registry, arguments: arguments)

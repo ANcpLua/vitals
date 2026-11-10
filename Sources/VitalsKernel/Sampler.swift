@@ -206,11 +206,25 @@ public enum Sampler {
             proc_name(pid, raw.baseAddress, UInt32(raw.count))
         }
         let decoded = String(decoding: buffer.prefix(Int(max(length, 0))), as: UTF8.self)
-        let name = decoded.isEmpty ? "pid \(pid)" : decoded
+        let kernelName = decoded.isEmpty ? "pid \(pid)" : decoded
+        let name = ProcessName.isVersionNumber(kernelName)
+            ? executablePath(pid).map { ProcessName.display(kernelName: kernelName, executablePath: $0) } ?? kernelName
+            : kernelName
         if startedSeconds != 0 {
             names.withLock { $0[pid] = Identity(startSeconds: startedSeconds, name: name) }
         }
         return name
+    }
+
+    /// The executable's full path; nil when the process exited or belongs to
+    /// another user.
+    package static func executablePath(_ pid: pid_t) -> String? {
+        var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        let length = buffer.withUnsafeMutableBytes { raw in
+            proc_pidpath(pid, raw.baseAddress, UInt32(raw.count))
+        }
+        guard length > 0 else { return nil }
+        return String(decoding: buffer.prefix(Int(length)), as: UTF8.self)
     }
 
     static func footprint(_ pid: pid_t) -> UInt64? {

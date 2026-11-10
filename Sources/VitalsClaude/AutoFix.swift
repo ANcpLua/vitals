@@ -127,9 +127,16 @@ public enum AutoFixMatch {
     }
 
     /// A registry pid reused by another program after a crash is not a session.
+    /// The native installer runs `…/claude/versions/<version>`, so that file
+    /// counts as `claude` too.
     static func isClaude(_ arguments: [String]?) -> Bool {
         guard let executable = arguments?.first else { return arguments == nil }
-        return (executable as NSString).lastPathComponent == "claude"
+        let parts = executable.split(separator: "/")
+        guard let file = parts.last else { return false }
+        if file == "claude" { return true }
+        let numbers = file.split(separator: ".", omittingEmptySubsequences: false)
+        let isVersion = numbers.count > 1 && numbers.allSatisfy { !$0.isEmpty && $0.utf8.allSatisfy { $0 >= 48 && $0 <= 57 } }
+        return isVersion && parts.count >= 3 && parts[parts.count - 2] == "versions" && parts[parts.count - 3] == "claude"
     }
 
     /// Unarchived records with an auto-fix PR, keyed by process. A session

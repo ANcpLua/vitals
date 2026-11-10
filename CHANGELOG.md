@@ -5,6 +5,21 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
 ## Unreleased
 
 ### Fixed
+- Background sessions were missing from the session list, which said "none running"
+  while one ran: Claude Code registers a session its daemon hosts with kind `bg`, and
+  only `interactive` was accepted. They are listed now, and the tooltip and the
+  copied line call them background. The terminal record a session leaves when it
+  moves to the background (`parkedJobId`), a process the daemon started ahead of
+  time that no session has claimed (`spare`), and the daemon's own `daemon` and
+  `daemon-worker` records stay out.
+- A session that had idled for more than 24 hours dropped out of the list although
+  it was still running: the registry is only rewritten when the status changes. It
+  stays listed now while its process started when the record says it did; the
+  24 hour cut-off remains for records that cannot be confirmed that way.
+- Claude Code installed by the native installer appeared in the process table as its
+  version number (`2.1.321`), because the executable is
+  `~/.local/share/claude/versions/<version>`. It is named `claude` again, and the
+  auto-fix match recognizes that executable.
 - `vitals awake` printed `off` whatever the menu bar held: through the `~/.local/bin`
   symlink `UserDefaults.standard` had no bundle domain. It reads `dev.ancplua.vitals` now.
 
@@ -14,6 +29,10 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
   (`SpawnCounts`, `AgentSpawns`, the `spawns` line of `vitals burn`).
 
 ### Added
+- Sessions waiting for the user (registry status `waiting`: a permission prompt, a
+  question) are amber, counted in the Sessions row (`1 busy · 1 waiting · 2 idle`),
+  sorted after the working ones, and say what they wait for in the tooltip and the
+  copied line. Status `shell` counts as busy, as in Claude Code's own list.
 - Auto-fix PR sessions in the session list: the desktop app's bound PR (its
   `claude-code-sessions` store, mapped to the process by `--resume=` in its
   arguments) gets an "AUTO-FIX #700" marker colored and labelled by state

@@ -484,6 +484,20 @@ do {
 } catch { fail("credential metadata: \(error)") }
 print("ok    credential monitoring: configuration round-trip and invalid-but-present warning")
 
+// A tool installed as <tool>/versions/<version> gets its tool name back.
+guard ProcessName.display(kernelName: "2.1.321", executablePath: "/Users/a/.local/share/claude/versions/2.1.321") == "claude",
+      ProcessName.display(kernelName: "2.1.321", executablePath: "/opt/tools/2.1.321") == "2.1.321",
+      ProcessName.display(kernelName: "2.1.321", executablePath: "/x/claude/versions/2.1.322") == "2.1.321",
+      ProcessName.display(kernelName: "node", executablePath: "/x/node/versions/node") == "node",
+      ProcessName.isVersionNumber("10.0"), !ProcessName.isVersionNumber("10"), !ProcessName.isVersionNumber("1..2"),
+      !ProcessName.isVersionNumber(".1"), !ProcessName.isVersionNumber("1.2-beta"), !ProcessName.isVersionNumber("") else {
+    fail("a version-numbered process name must resolve to its tool only for <tool>/versions/<version>")
+}
+guard let ownPath = Sampler.executablePath(getpid()), ownPath.hasSuffix("selftest") else {
+    fail("the executable path of this process must come back from proc_pidpath")
+}
+print("ok    process names: versioned executables resolve to their tool")
+
 guard let ownArguments = ProcessArguments.read(getpid()), ownArguments.first?.hasSuffix("selftest") == true else {
     fail("process arguments must come back from KERN_PROCARGS2 with argv[0] first")
 }
