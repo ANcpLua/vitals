@@ -276,12 +276,14 @@ public enum PromptCacheScanner {
     public static let subagentWindow: TimeInterval = 30 * 60
     public static let maxSubagents = 3
 
-    /// Claude Code reads `AGENTS.md` only while its built-in AGENTS.md plugin
-    /// is switched on in `settings.json`.
+    /// Claude Code reads `AGENTS.md` through a built-in plugin that is on
+    /// unless `enabledPlugins` switches it off. Only the user's `settings.json`
+    /// is consulted here, not project or managed settings.
     public static func agentsFilesLoaded(settings: Data?) -> Bool {
         let object = settings.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
         let plugins = object["enabledPlugins"] as? [String: Any] ?? [:]
-        return plugins["cc-plugin-agents-md@builtin"] as? Bool == true
+        guard let switched = plugins["cc-plugin-agents-md@builtin"] else { return true }
+        return switched as? Bool == true
     }
 
     /// The instruction files a session reads at its start: user scope first,
@@ -297,17 +299,24 @@ public enum PromptCacheScanner {
         if agentsFiles {
             files.insert(home.root.appendingPathComponent("AGENTS.md"), at: 1)
             files.append(project.appendingPathComponent("AGENTS.md"))
+            files.append(project.appendingPathComponent(".claude/AGENTS.md"))
         }
         return files
     }
 
-    /// A link counts by its target: `~/.claude/AGENTS.md` is usually a link
-    /// into a dotfiles checkout, and an edit there leaves the link untouched.
+    /// A link counts by its target as well as by itself: `~/.claude/AGENTS.md`
+    /// is usually a link into a dotfiles checkout, and an edit there leaves the
+    /// link untouched, while pointing the link elsewhere changes only the link.
+    /// A link to nothing is no instruction file.
     public static func edited(_ files: [URL], after date: Date) -> Bool {
-        files.contains { url in
-            let values = try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.contentModificationDateKey])
-            guard let modified = values?.contentModificationDate else { return false }
-            return modified > date
+        func modified(_ url: URL) -> Date? {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        }
+        return files.contains { url in
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let latest = [modified(url), modified(url.resolvingSymlinksInPath())].compactMap({ $0 }).max()
+            else { return false }
+            return latest > date
         }
     }
 

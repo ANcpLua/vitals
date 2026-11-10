@@ -506,14 +506,15 @@ do {
     let config = CacheTTLConfig.parse(settings: Data(#"{"promptCacheTtl":"5m","env":{"CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL":"1h"}}"#.utf8), environment: ["CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"])
     expect(config == CacheTTLConfig(main: 3_600, subagent: 3_600), "ttl overrides: \(config)")
 
-    // Instruction files: the CLAUDE.md names always, AGENTS.md only with the
-    // built-in plugin on; a link counts by its target's date.
+    // Instruction files: the CLAUDE.md names always, AGENTS.md unless the
+    // built-in plugin is switched off; a link counts by its target's date.
     expect(
         PromptCacheScanner.agentsFilesLoaded(settings: Data(#"{"enabledPlugins":{"cc-plugin-agents-md@builtin":true}}"#.utf8))
             && !PromptCacheScanner.agentsFilesLoaded(settings: Data(#"{"enabledPlugins":{"cc-plugin-agents-md@builtin":false}}"#.utf8))
-            && !PromptCacheScanner.agentsFilesLoaded(settings: Data("{}".utf8))
-            && !PromptCacheScanner.agentsFilesLoaded(settings: nil),
-        "AGENTS.md is read only while the built-in plugin is enabled"
+            && PromptCacheScanner.agentsFilesLoaded(settings: Data(#"{"enabledPlugins":{"other@builtin":false}}"#.utf8))
+            && PromptCacheScanner.agentsFilesLoaded(settings: Data("{}".utf8))
+            && PromptCacheScanner.agentsFilesLoaded(settings: nil),
+        "the AGENTS.md plugin is on by default and off only when settings say so"
     )
     let instructionsRoot = FileManager.default.temporaryDirectory
         .appendingPathComponent("vitals-instructions-selftest-\(UUID().uuidString)", isDirectory: true)
@@ -533,7 +534,7 @@ do {
     let withAgents = PromptCacheScanner.instructionFiles(home: instructionsHome, cwd: repo.path, agentsFiles: true)
     expect(
         names(withAgents)
-            == [".claude/CLAUDE.md", ".claude/AGENTS.md", "repo/CLAUDE.md", "repo/CLAUDE.local.md", "repo/.claude/CLAUDE.md", "repo/AGENTS.md"],
+            == [".claude/CLAUDE.md", ".claude/AGENTS.md", "repo/CLAUDE.md", "repo/CLAUDE.local.md", "repo/.claude/CLAUDE.md", "repo/AGENTS.md", "repo/.claude/AGENTS.md"],
         "instruction files with the AGENTS.md plugin: \(names(withAgents))"
     )
     let deployed = instructionsRoot.appendingPathComponent("dotfiles-AGENTS.md")
@@ -549,6 +550,18 @@ do {
                 after: linkedAt.addingTimeInterval(1_800)
             ),
         "an edit to the file a linked AGENTS.md points at counts, and only with the plugin on"
+    )
+    try FileManager.default.createSymbolicLink(
+        at: repo.appendingPathComponent("AGENTS.md"), withDestinationURL: instructionsRoot.appendingPathComponent("missing.md")
+    )
+    expect(
+        !PromptCacheScanner.edited([repo.appendingPathComponent("AGENTS.md")], after: .distantPast),
+        "a link to nothing is no instruction file"
+    )
+    expect(
+        PromptCacheScanner.edited([instructionsHome.root.appendingPathComponent("AGENTS.md")], after: linkedAt.addingTimeInterval(-60))
+            && !PromptCacheScanner.edited([deployed], after: linkedAt.addingTimeInterval(3_700)),
+        "a link made after the session started counts by its own date"
     )
     expect(PromptCacheParser.parse(request("z", at: t0, read: 10, write: 0), subagent: false, configured: 300)?.ttlSource == .setting, "configured ttl when nothing was written")
 }
