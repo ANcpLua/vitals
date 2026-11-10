@@ -649,13 +649,13 @@ enum SessionsPreview {
         }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let warm = session(41_001, "vitals sessions view", home + "/Developer/vitals", .busy, hours: 1)
-        let waiting = session(41_005, "Nightly analyzer run", home + "/Projects/example-tool", .waiting, hours: 2,
+        let waiting = session(41_005, "Nightly analyzer run", home + "/Projects/example", .waiting, hours: 2,
                               kind: "bg", waitingFor: "input needed")
-        let expiring = session(41_002, "Example rename", home + "/Projects/example-tool", .idle, hours: 5)
-        let cold = session(41_003, "Example session", home + "/Projects/example-tool", .idle, hours: 16)
-        let failing = session(41_004, "Example change", home + "/Projects/example-tool", .idle, hours: 16)
+        let expiring = session(41_002, "Rename the interfaces", home + "/Projects/example", .idle, hours: 5)
+        let cold = session(41_003, "Review notes", home + "/Projects/example", .idle, hours: 16)
+        let failing = session(41_004, "Migrate the build paths", home + "/Projects/example", .idle, hours: 16)
         let coldCache = cache(ttl: 3_600, ago: 3 * 3_600, requests: 212, misses: 2, repaid: 1_300_000, cause: .expired, hit: 0.94, prompt: 912_000)
-        let pr = BoundPullRequest(number: 700, repo: "example-org/example-tool", branch: "bugfix/example-branch", baseRef: "develop")
+        let pr = BoundPullRequest(number: 700, repo: "example-org/example", branch: "bugfix/example-branch", baseRef: "develop")
         return ClaudeSectionModel(
             telemetry: telemetry,
             sessions: ClaudeSessionsSnapshot(sessions: [warm, waiting, expiring, cold, failing], capturedAt: now),
@@ -668,7 +668,7 @@ enum SessionsPreview {
                 ),
                 expiring.pid: SessionCache(
                     main: cache(ttl: 3_600, ago: 52 * 60, requests: 30, misses: 1, repaid: 140_000, hit: 0.88, prompt: 180_000),
-                    subagents: [SubagentCache(id: "a2", label: "Run example test target",
+                    subagents: [SubagentCache(id: "a2", label: "Run the test target",
                                               cache: cache(ttl: 300, ago: 280, requests: 9, misses: 2, repaid: 180_000, cause: .expired, hit: 0.41, prompt: 92_000))]
                 ),
                 cold.pid: SessionCache(main: coldCache, hint: PromptCacheText.hint(coldCache, runningVersion: "2.1.292", instructionsEdited: false, now: now)),

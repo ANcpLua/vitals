@@ -457,7 +457,7 @@ public enum AutoFix {
 
     public static func marker(_ pr: BoundPullRequest) -> String { "AUTO-FIX #\(pr.number)" }
 
-    /// "example-org/example-tool#700 · bugfix/example-branch".
+    /// "example-org/example#700 · bugfix/example-branch".
     public static func reference(_ pr: BoundPullRequest) -> String {
         [pr.reference, pr.branch].compactMap { $0 }.joined(separator: " · ")
     }

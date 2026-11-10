@@ -18,6 +18,8 @@ import urllib.parse
 import urllib.request
 import uuid
 
+# The options of a hosted MCP check: where its tokens are sent and which Keychain items hold them.
+ROUTING = ('AUTH0_DOMAIN', 'MCP_URL', 'MCP_REFRESH_SERVICE', 'MCP_CLIENT_ID_SERVICE', 'MCP_KEYCHAIN_ACCOUNT')
 STATES = {'valid', 'invalid', 'missing', 'unavailable', 'pending', 'stale', 'unchecked', 'scopeMismatch'}
 MAX_AGE = 24 * 3600
 
@@ -141,9 +143,9 @@ def probe(provider, env):
             # token that could not be saved would be lost.
             domain, endpoint = env.get('AUTH0_DOMAIN', ''), env.get('MCP_URL', '')
             service, account = env.get('MCP_REFRESH_SERVICE'), env.get('MCP_KEYCHAIN_ACCOUNT')
-            if not (re.fullmatch(r'[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+', domain) and re.fullmatch(r'https://[^\s/?#]+(/\S*)?', endpoint)
-                    and service and account):
-                return result('unchecked', 'Hosted MCP check needs AUTH0_DOMAIN, MCP_URL, MCP_REFRESH_SERVICE and MCP_KEYCHAIN_ACCOUNT options')
+            if not (re.fullmatch(r'[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+', domain) and re.fullmatch(r'https://[^\s/?#@]+(/\S*)?', endpoint)
+                    and service and account and env.get('MCP_CLIENT_ID_SERVICE')):
+                return result('unchecked', 'Hosted MCP check needs the options ' + ', '.join(ROUTING))
             refresh, client = require(env, 'MCP_REFRESH_TOKEN', 'MCP_CLIENT_ID')
             data = request('https://' + domain + '/oauth/token', body={
                 'grant_type': 'refresh_token', 'refresh_token': refresh, 'client_id': client})
@@ -284,6 +286,11 @@ def local_environment(spec):
     if spec.get('refreshFile'):
         env['CWS_REFRESH_TOKEN'] = Path(spec['refreshFile']).expanduser().read_text().strip()
     if spec.get('provider') == 'auth0':
+        # Only the registry entry says where the tokens go; an env file must not redirect them.
+        for name in ROUTING:
+            env.pop(name, None)
+            if spec.get('options', {}).get(name):
+                env[name] = spec['options'][name]
         account = env.get('MCP_KEYCHAIN_ACCOUNT')
         if account and env.get('MCP_REFRESH_SERVICE') and env.get('MCP_CLIENT_ID_SERVICE'):
             env['MCP_REFRESH_TOKEN'] = keychain(env['MCP_REFRESH_SERVICE'], account)

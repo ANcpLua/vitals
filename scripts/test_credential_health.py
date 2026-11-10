@@ -3,6 +3,7 @@ sys.dont_write_bytecode = True
 import importlib.util
 import json
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -71,7 +72,8 @@ class HealthTests(unittest.TestCase):
             events.append('save')
             saved.append(arguments)
         env = {'MCP_REFRESH_TOKEN': 'old', 'MCP_CLIENT_ID': 'client', 'AUTH0_DOMAIN': 'tenant.example.com',
-               'MCP_URL': 'https://mcp.example.com/mcp', 'MCP_REFRESH_SERVICE': 'example-refresh', 'MCP_KEYCHAIN_ACCOUNT': 'example'}
+               'MCP_URL': 'https://mcp.example.com/mcp', 'MCP_REFRESH_SERVICE': 'example-refresh',
+               'MCP_CLIENT_ID_SERVICE': 'example-client', 'MCP_KEYCHAIN_ACCOUNT': 'example'}
         with patch.object(h, 'request', side_effect=request) as requested, patch.object(h, 'write_keychain', side_effect=save):
             self.assertEqual(h.probe('auth0', env)['state'], 'valid')
         self.assertEqual(events, ['refresh', 'save', 'mcp'])
@@ -81,9 +83,11 @@ class HealthTests(unittest.TestCase):
 
     def test_hosted_mcp_check_asks_nothing_until_its_options_are_complete(self):
         complete = {'MCP_REFRESH_TOKEN': 'old', 'MCP_CLIENT_ID': 'client', 'AUTH0_DOMAIN': 'tenant.example.com',
-                    'MCP_URL': 'https://mcp.example.com/mcp', 'MCP_REFRESH_SERVICE': 'example-refresh', 'MCP_KEYCHAIN_ACCOUNT': 'example'}
-        changes = [{name: ''} for name in ('AUTH0_DOMAIN', 'MCP_URL', 'MCP_REFRESH_SERVICE', 'MCP_KEYCHAIN_ACCOUNT')]
-        changes += [{'AUTH0_DOMAIN': 'tenant.example.com/path'}, {'AUTH0_DOMAIN': 'localhost'}, {'MCP_URL': 'http://mcp.example.com/mcp'}]
+                    'MCP_URL': 'https://mcp.example.com/mcp', 'MCP_REFRESH_SERVICE': 'example-refresh',
+                    'MCP_CLIENT_ID_SERVICE': 'example-client', 'MCP_KEYCHAIN_ACCOUNT': 'example'}
+        changes = [{name: ''} for name in h.ROUTING]
+        changes += [{'AUTH0_DOMAIN': 'tenant.example.com/path'}, {'AUTH0_DOMAIN': 'localhost'}, {'AUTH0_DOMAIN': 'user@tenant.example.com'},
+                    {'MCP_URL': 'http://mcp.example.com/mcp'}, {'MCP_URL': 'https://user@mcp.example.com/mcp'}]
         for change in changes:
             with self.subTest(change=change), patch.object(h, 'request') as requested, patch.object(h, 'write_keychain') as saved:
                 self.assertEqual(h.probe('auth0', dict(complete, **change))['state'], 'unchecked')
@@ -102,6 +106,19 @@ class HealthTests(unittest.TestCase):
         with patch.object(h, 'keychain') as read:
             self.assertNotIn('MCP_REFRESH_TOKEN', h.local_environment({'provider': 'auth0', 'options': {}}))
             read.assert_not_called()
+
+    def test_an_env_file_cannot_redirect_the_hosted_mcp_tokens(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / 'service.env'
+            env_file.write_text('AUTH0_DOMAIN=other.example.net\nMCP_URL=https://other.example.net/mcp\nMCP_KEYCHAIN_ACCOUNT=other\nUNRELATED=kept\n')
+            options = {'AUTH0_DOMAIN': 'tenant.example.com', 'MCP_REFRESH_SERVICE': 'example-refresh',
+                       'MCP_CLIENT_ID_SERVICE': 'example-client', 'MCP_KEYCHAIN_ACCOUNT': 'example'}
+            with patch.object(h, 'keychain', return_value='value'):
+                env = h.local_environment({'provider': 'auth0', 'envFile': str(env_file), 'options': options})
+        self.assertEqual(env['AUTH0_DOMAIN'], 'tenant.example.com')
+        self.assertEqual(env['MCP_KEYCHAIN_ACCOUNT'], 'example')
+        self.assertNotIn('MCP_URL', env, 'a routing option the entry does not set must not come from the env file')
+        self.assertEqual(env['UNRELATED'], 'kept')
 
 if __name__ == '__main__':
     unittest.main()

@@ -57,6 +57,9 @@ class HealthWorkflowTests(unittest.TestCase):
             g.load_map(ROOT / 'examples/does-not-exist.json')
         with self.assertRaisesRegex(ValueError, 'not JSON'):
             self.load('{')
+        with self.assertRaisesRegex(ValueError, 'cannot be read'):
+            g.load_map(ROOT / 'examples')
+        self.assertEqual(self.load({'owner': 'owner', 'repositories': {'.github': [{'job': 'github', 'secrets': ['RELEASE_TOKEN']}]}})[0], 'owner')
         job = {'job': 'railway', 'secrets': ['RAILWAY_TOKEN']}
         for data, reason in [
             ({'repositories': {'service': [job]}}, 'owner'),
@@ -68,6 +71,11 @@ class HealthWorkflowTests(unittest.TestCase):
             ({'owner': 'owner', 'repositories': {'service': [{'job': 'railway', 'secrets': ['lower-case']}]}}, 'secret names'),
             ({'owner': 'owner', 'repositories': {'service': [dict(job, variables={'ID': 7})]}}, 'variables'),
             ({'owner': 'owner', 'repositories': {'service': [dict(job, run='echo')]}}, 'only'),
+            ({'owner': 'owner', 'repositories': {'..': [job]}}, 'repository name'),
+            ({'owner': 'owner', 'repositories': {'service': [dict(job, variables={'RAILWAY_TOKEN': 'x'})]}}, 'reuse'),
+            ({'owner': 'owner', 'repositories': {'service': [dict(job, variables={'CHECK_REPOSITORY': 'x'})]}}, 'reuse'),
+            ({'owner': 'owner', 'repositories': {'service': [dict(job, variables={'ID': '${{ secrets.OTHER }}'})]}}, 'expression'),
+            (['owner'], 'object'),
             ({'owner': 'owner', 'repositories': {'service': [job, job]}}, 'once'),
         ]:
             with self.subTest(reason=reason, data=data):

@@ -218,9 +218,9 @@ do {
         try Data(json.utf8).write(to: sessionsDir.appendingPathComponent(name))
     }
     try write("2663.json", """
-        {"pid":2663,"sessionId":"b30104f9","cwd":"/Users/ancplua/example-org/example-app",
+        {"pid":2663,"sessionId":"b30104f9","cwd":"/Users/ancplua/projects/example-app",
          "startedAt":\(nowMillis - 420_000),"kind":"interactive","entrypoint":"cli",
-         "name":"example-app-1","status":"busy","updatedAt":\(nowMillis - 1_000),"version":"2.1.239"}
+         "name":"example-app-82","status":"busy","updatedAt":\(nowMillis - 1_000),"version":"2.1.239"}
         """)
     try write("1274.json", """
         {"pid":1274,"sessionId":"f2b61b80","cwd":"/Users/ancplua",
@@ -305,7 +305,7 @@ do {
     )
     expect(
         registry.sessions.map { $0.name }
-            == ["example-app-1", "shell-one", "Setup health check", "no-status", "fresh-idle", "numeric job id", "ancplua-bd", "three days idle"],
+            == ["example-app-82", "shell-one", "Setup health check", "no-status", "fresh-idle", "numeric job id", "ancplua-bd", "three days idle"],
         "session registry did not filter dead, cloud, parked, spare, daemon, malformed, stale entries or sort working, waiting, rest: \(registry.sessions.map { $0.name })"
     )
     expect(registry.busyCount == 2, "busy and shell sessions both count as busy: \(registry.busyCount)")
@@ -341,7 +341,7 @@ do {
     )
     expect(
         registry.sessions.first?.abbreviatedCwd(homeDirectory: "/Users/ancplua")
-            == "~/example-org/example-app"
+            == "~/projects/example-app"
             && registry.sessions.last?.abbreviatedCwd(homeDirectory: "/Users/ancplua") == "~",
         "cwd abbreviation is wrong"
     )
@@ -379,7 +379,7 @@ do {
     )
     expect(
         ClaudeSessionText.lines(registry.sessions)
-            == "example-app-1  ·  interactive  ·  busy  ·  pid 2663  ·  /Users/ancplua/example-org/example-app  ·  session b30104f9  ·  Claude Code 2.1.239\n"
+            == "example-app-82  ·  interactive  ·  busy  ·  pid 2663  ·  /Users/ancplua/projects/example-app  ·  session b30104f9  ·  Claude Code 2.1.239\n"
             + "shell-one  ·  interactive  ·  shell  ·  pid 3005  ·  /Users/ancplua  ·  session sh05\n"
             + "Setup health check  ·  background  ·  waiting: input needed  ·  pid 3001  ·  /Users/ancplua  ·  session bg01\n"
             + "no-status  ·  interactive  ·  unknown  ·  pid 3009  ·  /Users/ancplua  ·  session un09\n"
@@ -434,7 +434,7 @@ expect(denied.keepingUsage(from: good).usage.isAccessDenied, "access denial must
 // Presentation helpers and the project slug.
 let budgetNow = Date(timeIntervalSince1970: 1_800_000_000)
 expect(ClaudeBurn.tokens(240_000) == "240k" && ClaudeBurn.tokens(1_260_000) == "1.3M" && ClaudeBurn.tokens(850) == "850", "token formatting")
-expect(ClaudeTranscripts.slug("/Users/ancplua/example-org/vitals") == "-Users-ancplua-example-org-vitals", "project slug")
+expect(ClaudeTranscripts.slug("/Users/ancplua/projects/vitals") == "-Users-ancplua-projects-vitals", "project slug")
 
 // Transcripts: assistant lines inside the window count once per message id
 // even when streaming wrote several lines; older lines and user lines do not.
@@ -568,7 +568,7 @@ do {
 
 // Auto-fix sessions of the desktop app
 do {
-    let record = DesktopSessionStore.parse(Data(#"{"sessionId":"local_1","cliSessionId":"c1","isArchived":false,"prs":[{"prNumber":4,"repo":"o/r","state":"MERGED","autoFix":true,"dismissed":true},{"prNumber":700,"repo":"example-org/example-tool","branch":"b","state":"OPEN","autoFix":true}]}"#.utf8))
+    let record = DesktopSessionStore.parse(Data(#"{"sessionId":"local_1","cliSessionId":"c1","isArchived":false,"prs":[{"prNumber":4,"repo":"o/r","state":"MERGED","autoFix":true,"dismissed":true},{"prNumber":700,"repo":"example-org/example","branch":"b","state":"OPEN","autoFix":true}]}"#.utf8))
     expect(record?.autoFixPR?.number == 700 && record?.cliSessionId == "c1", "desktop record: \(String(describing: record))")
     let arguments: [Int32: [String]] = [
         10: ["/Applications/Claude.app/Contents/Helpers/disclaimer", "--pgroup", "--", "/x/claude", "--resume=c1"],
@@ -594,7 +594,7 @@ do {
     expect(failing?.ci == .failing && failing?.failingChecks == ["ubuntu"] && failing?.autoMerge == true, "failing rollup: \(String(describing: failing))")
     expect(PullRequestStatus.parse(pr: pr, runs: Data("[]".utf8), at: Date())?.ci == PullRequestStatus.CI.none, "no checks at all")
 
-    let bound = BoundPullRequest(number: 700, repo: "example-org/example-tool")
+    let bound = BoundPullRequest(number: 700, repo: "example-org/example")
     func state(_ status: PullRequestStatus?, activity: AutoFixActivity? = nil, busy: Bool = false) -> AutoFixState {
         AutoFix.state(AutoFixSession(pid: 1, localId: "l", cliSessionId: nil, pr: bound, activity: activity, status: status), busy: busy)
     }

@@ -13,7 +13,8 @@ import tempfile
 MAP = Path.home() / '.config/vitals/health-workflows.json'
 VITALS = 'ANcpLua/vitals'
 PROVIDERS = ('railway', 'github', 'chrome', 'amo', 'edge')
-NAME = r'[A-Za-z0-9][A-Za-z0-9._-]*'
+OWNER = r'[A-Za-z0-9][A-Za-z0-9-]*'
+REPOSITORY = r'(?!\.{1,2}$)[A-Za-z0-9._-]+'
 VARIABLE = r'[A-Z][A-Z0-9_]*'
 
 
@@ -23,15 +24,19 @@ def load_map(path):
         data = json.loads(Path(path).read_text())
     except FileNotFoundError:
         raise ValueError(f'no monitoring map at {path}: copy examples/health-workflows.example.json there and fill it in')
+    except OSError as error:
+        raise ValueError(f'{path} cannot be read: {error.strerror}')
     except json.JSONDecodeError as error:
         raise ValueError(f'{path} is not JSON: {error}')
+    if not isinstance(data, dict):
+        raise ValueError(f'{path} must hold an object with "owner" and "repositories"')
     owner, repositories = data.get('owner'), data.get('repositories')
-    if not isinstance(owner, str) or not re.fullmatch(NAME, owner):
+    if not isinstance(owner, str) or not re.fullmatch(OWNER, owner):
         raise ValueError('"owner" must be the GitHub owner of the monitored repositories')
     if not isinstance(repositories, dict) or not repositories:
         raise ValueError('"repositories" must map at least one repository name to its jobs')
     for repo, jobs in repositories.items():
-        if not re.fullmatch(NAME, repo) or not isinstance(jobs, list) or not jobs:
+        if not re.fullmatch(REPOSITORY, repo) or not isinstance(jobs, list) or not jobs:
             raise ValueError(f'{repo!r} needs a repository name and a list of jobs')
         for job in jobs:
             if not isinstance(job, dict) or job.get('job') not in PROVIDERS:
@@ -41,6 +46,10 @@ def load_map(path):
                 raise ValueError(f'{repo} {job["job"]}: "secrets" must list secret names')
             if not isinstance(variables, dict) or not all(re.fullmatch(VARIABLE, name) and isinstance(value, str) for name, value in variables.items()):
                 raise ValueError(f'{repo} {job["job"]}: "variables" must map names to text')
+            if set(variables) & (set(secrets) | {'CHECK_REPOSITORY'}):
+                raise ValueError(f'{repo} {job["job"]}: a variable may not reuse the name of a secret or CHECK_REPOSITORY')
+            if any('${{' in value for value in variables.values()):
+                raise ValueError(f'{repo} {job["job"]}: a variable is plain text, not a workflow expression')
             if set(job) - {'job', 'secrets', 'variables'}:
                 raise ValueError(f'{repo} {job["job"]}: only "job", "secrets" and "variables" are read')
         if len({job['job'] for job in jobs}) != len(jobs):

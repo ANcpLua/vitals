@@ -128,7 +128,7 @@ class ExampleRegistryTests(unittest.TestCase):
             {'note': 'Use as EXAMPLE_API_KEY. Value sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c.'},
             {'note': 'Use as EXAMPLE_API_KEY. Created at https://dashboard.stripe.com/apikeys.'},
             {'note': 'Use as EXAMPLE_API_KEY. Key id AKIAIOSFODNN7EXAMPLE.'},
-            {'note': 'Use as EXAMPLE_API_KEY. Project 00000000-0000-0000-0000-000000000002.'},
+            {'note': 'Use as EXAMPLE_API_KEY. Project 7C1E5A90-3B4D-4F62-8A17-D09E6B2C4F58.'},
             {'note': 'Use as EXAMPLE_API_KEY. Read by acme/billing-service.'},
             {'note': 'Use as EXAMPLE_API_KEY. Account owner@example.com.'},
             {'kind': 'keychain', 'service': 'Claude Code-credentials'},

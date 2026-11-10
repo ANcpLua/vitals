@@ -489,7 +489,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let locked = state == .managedByLaunchd || state == .unavailable
         item.isEnabled = !locked
         item.toolTip = state == .managedByLaunchd
-            ? "The example-repo installer keeps Vitals alive through \(LaunchAtLogin.agentLabel). Remove that agent to use a plain login item."
+            ? "The installer keeps Vitals alive through \(LaunchAtLogin.agentLabel). Remove that agent to use a plain login item."
             : nil
         item.attributedTitle = NSAttributedString(
             string: title,

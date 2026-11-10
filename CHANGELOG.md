@@ -172,7 +172,7 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
   rather than a CPU/NET switch so the spike graph never disappears.
 - "Launch at Login" toggle backed by `SMAppService.mainApp`. It is locked
   with an explanation while `~/Library/LaunchAgents/dev.ancplua.vitals.plist`
-  exists, so the example-repo LaunchAgent and a login item can never both be
+  exists, so the installer's LaunchAgent and a login item can never both be
   registered. State is re-read every time the menu opens.
 - Session rows in the Claude section copy themselves on click; "COPY ALL"
   in the SESSIONS header copies every session, hidden ones included. One
@@ -229,6 +229,6 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ### Changed
 - Standalone repository again at github.com/ANcpLua/vitals, started with a
-  fresh history. `install.sh` replaces the example-repo pipeline: it builds
+  fresh history. `install.sh` replaces the earlier install pipeline: it builds
   the ad-hoc signed `Vitals.app`, copies it to `~/Applications`, writes the
   `dev.ancplua.vitals` LaunchAgent and restarts it.

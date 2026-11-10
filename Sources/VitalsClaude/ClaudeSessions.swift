@@ -76,7 +76,7 @@ public struct ClaudeSession: Sendable, Equatable, Identifiable {
         return "\(status.rawValue): \(waitingFor)"
     }
 
-    /// `~/example-org/example-app` for display.
+    /// `~/projects/example-app` for display.
     public func abbreviatedCwd(
         homeDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path
     ) -> String {
