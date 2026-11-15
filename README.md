@@ -23,14 +23,14 @@ deletes the image files.
 ## Placement
 
 **Placement** in the menu, or the round antenna button next to LIVE, opens a floating panel for putting a phone hotspot or a
-5G modem in the right spot. Start uploads zeros to Cloudflare's speed-test endpoint
+5G modem in the right spot. Opening it uploads zeros to Cloudflare's speed-test endpoint
 at a limit you pick (5 to 50 Mbit/s) and sends an echo to 1.1.1.1 four times a
 second. The panel turns green, amber or red for the last second of upload against
 the best you reached so far, never more than the limit, and a lost echo shows as a
 dropout. A tone rises with the quality, so you can turn and move the device without
-looking at the screen; its slider sets the volume. Space starts and stops, Escape
-or clicking elsewhere closes the panel. Nothing is sent before Start, and closing
-the panel or five minutes of upload stop it. Upload counts only bytes the server
+looking at the screen; its slider sets the volume. Space pauses and resumes, Escape
+or clicking elsewhere closes the panel. Nothing is sent while it is closed; closing
+it or five minutes of upload stop it and release its threads, sockets and audio. Upload counts only bytes the server
 acknowledged, not what waits in the Mac's send buffer.
 
 ## Claude sessions

@@ -3,8 +3,9 @@ import VitalsCore
 import VitalsKernel
 
 /// Floating panel for placing a hotspot or modem. Nothing is sent while it is
-/// closed: opening it starts only the echo, Start starts the upload, and closing
-/// it (esc, the close button, clicking elsewhere) stops everything. The whole
+/// closed: opening it starts the echo and the upload, Stop and Start pause and
+/// resume, and closing it (esc, the close button, clicking elsewhere) stops and
+/// releases everything: probe threads and sockets, the tone engine, the timer. The whole
 /// panel turns green, amber or red four times a second, and a tone rises with
 /// the quality so the device can be moved without looking at the screen.
 @MainActor
@@ -74,9 +75,13 @@ final class PlacementPanel: NSPanel {
         recent = []
         lostInSecond = []
         uploadWindow.reset()
+        // Opening is the explicit action: the upload starts with the panel and
+        // ends with it. Stop and Start in between only pause it.
         let probe = PlacementProbe()
         probe.setLimit(mbit: currentLimit)
         probe.start()
+        probe.setUploading(true)
+        stopAt = Date().addingTimeInterval(Placement.autoStopSeconds)
         self.probe = probe
         place()
         makeKeyAndOrderFront(nil)

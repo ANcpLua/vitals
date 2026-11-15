@@ -283,8 +283,15 @@ case "placement":
             + (reading.error.map { "  \($0)" } ?? ""))
         lost = false
     }
+    let used = Double(probe.read().ackedBytes) / 1_000_000
+    let stopped = Date()
     probe.stop()
-    Printer.out(String(format: "uploaded %.1f MB", Double(probe.read().ackedBytes) / 1_000_000))
+    while !probe.isFinished, Date().timeIntervalSince(stopped) < 3 { usleep(20_000) }
+    guard probe.isFinished else {
+        Printer.err("FAIL  probe threads still running 3 s after stop")
+        exit(1)
+    }
+    Printer.out(String(format: "uploaded %.1f MB · stopped, threads and sockets closed in %.0f ms", used, Date().timeIntervalSince(stopped) * 1_000))
 
 case "placement-preview":
     // Renders the placement panel off, good, fair and poor to PNG. Sends nothing.

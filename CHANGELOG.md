@@ -6,10 +6,10 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ### Added
 - Placement: a menu row opens a floating panel for finding the spot for a phone
-  hotspot or 5G modem. Start uploads zeros at a chosen limit; four times a second
+  hotspot or 5G modem. Opening it uploads zeros at a chosen limit; four times a second
   the panel turns green, amber or red against the best upload reached so far, and a
   tone rises with the quality, so the device can be moved without looking. Nothing
-  is sent until Start; closing the panel or five minutes stop it.
+  is sent while it is closed; closing it or five minutes stop it.
   `vitals placement [s] [Mbit/s]` prints the same headless, `vitals placement-preview`
   renders the panel. A round antenna button next to LIVE in the menu header opens
   it too.

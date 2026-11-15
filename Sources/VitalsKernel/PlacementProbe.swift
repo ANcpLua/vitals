@@ -39,6 +39,7 @@ public final class PlacementProbe: @unchecked Sendable {
         var pingMs: Double?
         var lostSinceRead = false
         var error: String?
+        var threads = 0
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -48,6 +49,7 @@ public final class PlacementProbe: @unchecked Sendable {
     /// Starts the echo loop and the (idle) upload loop. The upload itself only
     /// runs between `setUploading(true)` and `setUploading(false)` or `stop()`.
     public func start() {
+        state.withLock { $0.threads = 2 }
         let ping = Thread { [self] in pingLoop() }
         ping.name = "vitals.placement.ping"
         ping.start()
@@ -56,18 +58,26 @@ public final class PlacementProbe: @unchecked Sendable {
         upload.start()
     }
 
-    /// Ends both loops; they exit within about a second.
+    /// Ends both loops. A send or read that is waiting on the network is cut
+    /// off by shutting the socket down, so both threads exit within a second.
     public func stop() {
         state.withLock {
             $0.running = false
             $0.uploading = false
+            if $0.socket >= 0 { shutdown($0.socket, SHUT_RDWR) }
         }
+    }
+
+    /// True once both threads have exited and their sockets are closed.
+    public var isFinished: Bool {
+        state.withLock { $0.threads == 0 }
     }
 
     public func setUploading(_ on: Bool) {
         state.withLock {
             $0.uploading = on
             if on { $0.error = nil }
+            if !on, $0.socket >= 0 { shutdown($0.socket, SHUT_RDWR) }
         }
     }
 
@@ -99,6 +109,7 @@ public final class PlacementProbe: @unchecked Sendable {
     // MARK: Upload
 
     private func uploadLoop() {
+        defer { state.withLock { $0.threads -= 1 } }
         while state.withLock({ $0.running }) {
             guard state.withLock({ $0.uploading }) else {
                 Thread.sleep(forTimeInterval: 0.1)
@@ -107,6 +118,8 @@ public final class PlacementProbe: @unchecked Sendable {
             do {
                 try uploadSession()
             } catch {
+                // An error from cutting the socket on Stop is not a failure.
+                guard state.withLock({ $0.running && $0.uploading }) else { continue }
                 state.withLock { $0.error = "\(error)" }
                 Thread.sleep(forTimeInterval: 1)
             }
@@ -255,6 +268,7 @@ public final class PlacementProbe: @unchecked Sendable {
 
     /// ICMP echo through the unprivileged datagram socket macOS offers.
     private func pingLoop() {
+        defer { state.withLock { $0.threads -= 1 } }
         let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
         guard fd >= 0 else {
             state.withLock { $0.error = "ping: no ICMP socket" }

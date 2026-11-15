@@ -543,7 +543,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let title = "Placement · find the spot for a hotspot or modem"
         let item = NSMenuItem(title: title, action: #selector(openPlacement), keyEquivalent: "")
         item.target = self
-        item.toolTip = "Opens a panel that uploads zeros to \(PlacementProbe.uploadHost) at a set limit while you turn and move the device. It turns green, amber or red four times a second and a tone rises with the quality. Nothing is sent until Start; closing the panel stops it."
+        item.toolTip = "Opens a panel that uploads zeros to \(PlacementProbe.uploadHost) at a set limit while you turn and move the device. It turns green, amber or red four times a second and a tone rises with the quality. Opening the panel starts the upload; closing it stops it and releases everything."
         item.attributedTitle = NSAttributedString(
             string: title,
             attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: Palette.primary]
