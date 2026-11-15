@@ -4,6 +4,15 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ## Unreleased
 
+### Added
+- Placement: a menu row opens a floating panel for finding the spot for a phone
+  hotspot or 5G modem. Start uploads zeros at a chosen limit; four times a second
+  the panel turns green, amber or red against the best upload reached so far, and a
+  tone rises with the quality, so the device can be moved without looking. Nothing
+  is sent until Start; closing the panel or five minutes stop it.
+  `vitals placement [s] [Mbit/s]` prints the same headless, `vitals placement-preview`
+  renders the panel.
+
 ### Fixed
 - Background sessions were missing from the session list, which said "none running"
   while one ran: Claude Code registers a session its daemon hosts with kind `bg`, and

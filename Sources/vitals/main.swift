@@ -255,6 +255,60 @@ case "sessions-preview":
         exit(1)
     }
 
+case "placement":
+    // Headless placement: `vitals placement [seconds] [limit Mbit/s]` uploads at
+    // the limit and prints upload, grade and ping once a second. Sends data.
+    let seconds = arguments.count > 1 ? max(1, Int(arguments[1]) ?? 10) : 10
+    let limit = arguments.count > 2 ? max(1, Double(arguments[2]) ?? Placement.defaultLimit) : Placement.defaultLimit
+    let probe = PlacementProbe()
+    probe.setLimit(mbit: limit)
+    probe.start()
+    probe.setUploading(true)
+    var window = UploadWindow(seconds: 1)
+    var recent: [Double?] = []
+    var best = 0.0
+    var lost = false
+    for tick in 1...(seconds * Placement.hz) {
+        usleep(UInt32(1_000_000 / Placement.hz))
+        let reading = probe.read()
+        let mbit = window.adding(time: Date.timeIntervalSinceReferenceDate, bytes: reading.ackedBytes)
+        recent.append(mbit)
+        best = Placement.best(previous: best, recent: recent)
+        lost = lost || reading.lostPing
+        guard tick % Placement.hz == 0 else { continue }
+        let verdict = Placement.decide(
+            uploadMbit: mbit, lostPing: lost, reference: Placement.reference(best: best, limitMbit: limit))
+        let ping = reading.pingMs.map { String(format: "%4.0f ms", $0) } ?? "lost   "
+        Printer.out(String(format: "%3ds  %5.1f Mbit/s  %-7@  ping %@", tick / Placement.hz, mbit, verdict.grade.rawValue, ping)
+            + (reading.error.map { "  \($0)" } ?? ""))
+        lost = false
+    }
+    probe.stop()
+    Printer.out(String(format: "uploaded %.1f MB", Double(probe.read().ackedBytes) / 1_000_000))
+
+case "placement-preview":
+    // Renders the placement panel off, good, fair and poor to PNG. Sends nothing.
+    guard arguments.count > 1 else {
+        Printer.err("usage: vitals placement-preview <directory>")
+        exit(2)
+    }
+    _ = NSApplication.shared
+    let directory = URL(fileURLWithPath: arguments[1], isDirectory: true)
+    let panel = PlacementPanel()
+    let wave: [Double?] = (0..<120).map { 7 + 3 * sin(Double($0) / 9) }
+    do {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try panel.writePreview(nil, mbit: 0, best: 0, values: [], to: directory.appendingPathComponent("off.png"))
+        for (name, mbit) in [("good", 9.6), ("fair", 7.0), ("poor", 3.1)] {
+            let verdict = Placement.decide(uploadMbit: mbit, lostPing: false, reference: 10)
+            try panel.writePreview(verdict, mbit: mbit, best: 10, values: wave, to: directory.appendingPathComponent("\(name).png"))
+        }
+        Printer.out("wrote off, good, fair and poor to \(directory.path)")
+    } catch {
+        Printer.err("FAIL  \(error)")
+        exit(1)
+    }
+
 case "bar":
     let application = NSApplication.shared
     application.setActivationPolicy(.accessory)
@@ -263,6 +317,6 @@ case "bar":
     application.run()
 
 default:
-    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | burn | keys [init|check|restore] | mcp [refresh] | awake | bar]")
+    Printer.err("usage: vitals [snapshot | json | predict <pid> | watch [s] [diskGB] | claude | burn | keys [init|check|restore] | mcp [refresh] | awake | placement [s] [Mbit/s] | bar]")
     exit(2)
 }

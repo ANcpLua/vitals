@@ -513,3 +513,39 @@ guard let ownArguments = ProcessArguments.read(getpid()), ownArguments.first?.ha
     fail("process arguments must come back from KERN_PROCARGS2 with argv[0] first")
 }
 print("ok    process arguments: argv of this process")
+
+// Placement: the last second against the best reached so far, capped at the limit.
+do {
+    guard Placement.reference(best: 0, limitMbit: 10) == 10,
+          Placement.reference(best: 7.5, limitMbit: 10) == 7.5,
+          Placement.reference(best: 14, limitMbit: 10) == 10 else {
+        fail("placement reference must be the best so far, the limit before any best, never above the limit")
+    }
+    guard Placement.decide(uploadMbit: 9, lostPing: false, reference: 10).grade == .good,
+          Placement.decide(uploadMbit: 7, lostPing: false, reference: 10).grade == .fair,
+          Placement.decide(uploadMbit: 3, lostPing: false, reference: 10).grade == .poor,
+          Placement.decide(uploadMbit: 10, lostPing: true, reference: 10) == PlacementVerdict(grade: .dropout, quality: 0) else {
+        fail("placement grades: good from 85 %, fair from 60 %, a lost echo is a dropout")
+    }
+    let full: [Double?] = Array(repeating: 8, count: Placement.hz * Placement.bestWindowSeconds)
+    guard Placement.best(previous: 5, recent: full) == 8,
+          Placement.best(previous: 9, recent: full) == 9,
+          Placement.best(previous: 5, recent: Array(full.dropFirst())) == 5,
+          Placement.best(previous: 5, recent: [nil] + full.dropFirst()) == 5 else {
+        fail("placement best must need a full window of upload and only ever rise")
+    }
+    guard Placement.toneHz(quality: 0) == 220, Placement.toneHz(quality: 1) == 880,
+          Placement.toneHz(quality: 5) == Placement.toneHz(quality: 1.2) else {
+        fail("placement tone must run from 220 Hz to 880 Hz at the reference and stop rising at 120 %")
+    }
+    var window = UploadWindow(seconds: 1)
+    _ = window.adding(time: 0, bytes: 0)
+    _ = window.adding(time: 0.5, bytes: 625_000)
+    let rate = window.adding(time: 1.0, bytes: 1_250_000)
+    let slid = window.adding(time: 2.0, bytes: 1_250_000)
+    let restarted = window.adding(time: 2.25, bytes: 100)
+    guard abs(rate - 10) < 0.001, slid == 0, restarted == 0 else {
+        fail("upload window: \(rate) Mbit/s over a second, \(slid) after a quiet second, \(restarted) after the total dropped")
+    }
+    print("ok    placement: reference, grades, best window, tone and upload rate")
+}

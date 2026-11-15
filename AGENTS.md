@@ -141,6 +141,14 @@ row and a submenu or their own panel.
 - **launchd**: `launchctl bootout` returns before the service is gone; `install.sh`
   polls before `bootstrap`, otherwise bootstrap fails with I/O error 5 and Vitals
   is down.
+- **Placement** (`Placement.swift`, `PlacementProbe.swift`, `PlacementPanel.swift`,
+  `PlacementTone.swift`): plain HTTP POSTs of zeros to `speed.cloudflare.com/__up` over a
+  hand-made IPv4 socket, so `SO_NWRITE` (0x1024) can subtract what still sits in the send
+  buffer; the rate is acknowledged bytes, not written bytes. IPv4 only, because hotspot
+  IPv6 often does not route and every connect then hangs. Echo through the unprivileged
+  `SOCK_DGRAM`/`IPPROTO_ICMP` socket, whose replies carry the IP header. `SO_NOSIGPIPE`
+  on the upload socket, otherwise a dropped connection kills the app. Nothing runs while
+  the panel is closed; upload stops after `Placement.autoStopSeconds`.
 - **Network per process**: `nettop -P -L 1` totals only cover open sockets; a
   connection that opens and closes between ticks never shows.
 

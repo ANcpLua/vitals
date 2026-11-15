@@ -37,6 +37,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let clipboard = ClipboardMonitor()
     private lazy var clipboardPanel = ClipboardPanel(monitor: clipboard)
     private var clipboardHotKey: HotKey?
+    /// Hotspot or modem placement: its own panel, nothing runs while it is closed.
+    private lazy var placementPanel = PlacementPanel()
     /// Per-session token burn from the transcripts, scanned off the main actor
     /// after every usage poll.
     private var sessionBurns: [Int32: SessionBurn] = [:]
@@ -467,6 +469,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(viewItem(hint))
         menu.addItem(.separator())
         menu.addItem(clipboardItem())
+        menu.addItem(placementItem())
         menu.addItem(keysMenuItem())
         menu.addItem(networkToggleItem())
         menu.addItem(awakeMenuItem())
@@ -531,6 +534,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func openClipboard() {
         clipboardPanel.toggle()
+    }
+
+    private func placementItem() -> NSMenuItem {
+        let title = "Placement · find the spot for a hotspot or modem"
+        let item = NSMenuItem(title: title, action: #selector(openPlacement), keyEquivalent: "")
+        item.target = self
+        item.toolTip = "Opens a panel that uploads zeros to \(PlacementProbe.uploadHost) at a set limit while you turn and move the device. It turns green, amber or red four times a second and a tone rises with the quality. Nothing is sent until Start; closing the panel stops it."
+        item.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: Palette.primary]
+        )
+        return item
+    }
+
+    @objc private func openPlacement() {
+        placementPanel.toggle()
     }
 
     // MARK: API keys
