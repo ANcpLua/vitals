@@ -22,7 +22,7 @@ deletes the image files.
 
 ## Placement
 
-**Placement** in the menu opens a floating panel for putting a phone hotspot or a
+**Placement** in the menu, or the round antenna button next to LIVE, opens a floating panel for putting a phone hotspot or a
 5G modem in the right spot. Start uploads zeros to Cloudflare's speed-test endpoint
 at a limit you pick (5 to 50 Mbit/s) and sends an echo to 1.1.1.1 four times a
 second. The panel turns green, amber or red for the last second of upload against

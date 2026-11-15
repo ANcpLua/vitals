@@ -426,7 +426,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         mcpHeaderView = nil
         mcpRows = []
 
-        menu.addItem(viewItem(VitalsHeaderView()))
+        menu.addItem(viewItem(VitalsHeaderView { [weak self] in
+            self?.menu.cancelTracking()
+            self?.placementPanel.toggle()
+        }))
         menu.addItem(.separator())
 
         let dashboard = VitalsDashboardView(snapshot: snapshot)
@@ -1363,8 +1366,12 @@ private final class VitalsHeaderView: NSView {
     private let titleLabel = NSTextField(labelWithString: "Vitals")
     private let subtitleLabel = NSTextField(labelWithString: "System telemetry | updates every 2s")
     private let liveBadge = NSTextField(labelWithString: "LIVE")
+    private let placementButton = NSView()
+    private let placementIcon = NSImageView()
+    private let onPlacement: () -> Void
 
-    init() {
+    init(onPlacement: @escaping () -> Void) {
+        self.onPlacement = onPlacement
         super.init(frame: NSRect(x: 0, y: 0, width: 352, height: 58))
 
         titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
@@ -1381,9 +1388,28 @@ private final class VitalsHeaderView: NSView {
         liveBadge.layer?.cornerRadius = 9
         liveBadge.layer?.masksToBounds = true
 
+        // Menu item views get clicks through a gesture recognizer, as FlashLabel does.
+        placementIcon.image = NSImage(
+            systemSymbolName: "antenna.radiowaves.left.and.right",
+            accessibilityDescription: "Placement"
+        )
+        placementIcon.contentTintColor = Palette.blue
+        placementIcon.imageScaling = .scaleProportionallyDown
+        placementButton.wantsLayer = true
+        placementButton.layer?.backgroundColor = Palette.blue.withAlphaComponent(0.16).cgColor
+        placementButton.layer?.cornerRadius = 13
+        placementButton.toolTip = "Placement: find the spot for a hotspot or modem"
+        placementButton.addSubview(placementIcon)
+        placementButton.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(placementClicked)))
+
         addSubview(titleLabel)
         addSubview(subtitleLabel)
         addSubview(liveBadge)
+        addSubview(placementButton)
+    }
+
+    @objc private func placementClicked() {
+        onPlacement()
     }
 
     required init?(coder: NSCoder) {
@@ -1395,6 +1421,8 @@ private final class VitalsHeaderView: NSView {
         titleLabel.frame = NSRect(x: 16, y: 30, width: bounds.width - 100, height: 18)
         subtitleLabel.frame = NSRect(x: 16, y: 13, width: bounds.width - 32, height: 15)
         liveBadge.frame = NSRect(x: bounds.width - 66, y: 27, width: 50, height: 18)
+        placementButton.frame = NSRect(x: bounds.width - 102, y: 23, width: 26, height: 26)
+        placementIcon.frame = placementButton.bounds.insetBy(dx: 5, dy: 5)
     }
 }
 

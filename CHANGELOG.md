@@ -11,7 +11,8 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
   tone rises with the quality, so the device can be moved without looking. Nothing
   is sent until Start; closing the panel or five minutes stop it.
   `vitals placement [s] [Mbit/s]` prints the same headless, `vitals placement-preview`
-  renders the panel.
+  renders the panel. A round antenna button next to LIVE in the menu header opens
+  it too.
 
 ### Fixed
 - Background sessions were missing from the session list, which said "none running"
