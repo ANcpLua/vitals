@@ -4,6 +4,16 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ## Unreleased
 
+### Changed
+- Session rows say where the turn stands instead of how old the session is:
+  `working`, `needs you` (a prompt blocks it), `asks you` (the last turn ended on a
+  question) or `done`, and the Sessions row counts the same. Rows are named by Claude
+  Code's own session title, so sessions in one directory can be told apart.
+
+### Fixed
+- A session without calls in the last 15 minutes lost its context figure; it shows
+  the context of its latest call now.
+
 ### Added
 - Placement: a menu row opens a floating panel for finding the spot for a phone
   hotspot or 5G modem. Opening it uploads zeros at a chosen limit; four times a second

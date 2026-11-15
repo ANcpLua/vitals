@@ -42,13 +42,26 @@ public struct SessionBurn: Codable, Equatable, Sendable {
     public let cwd: String
     public let counts: TokenCounts
     public let minutes: Double
+    /// What the latest call carried in, inside the window or not.
+    public let lastContext: Int?
+    /// Claude Code's own title for the session (`ai-title`), which tells two
+    /// sessions in the same directory apart.
+    public let title: String?
+    /// The last turn ended on text whose last paragraph asks something.
+    public let asksUser: Bool?
 
-    public init(pid: Int32, name: String, cwd: String, counts: TokenCounts, minutes: Double) {
+    public init(
+        pid: Int32, name: String, cwd: String, counts: TokenCounts, minutes: Double,
+        lastContext: Int? = nil, title: String? = nil, asksUser: Bool? = nil
+    ) {
         self.pid = pid
         self.name = name
         self.cwd = cwd
         self.counts = counts
         self.minutes = minutes
+        self.lastContext = lastContext
+        self.title = title
+        self.asksUser = asksUser
     }
 
     public var tokens: Int { counts.total }
@@ -57,10 +70,12 @@ public struct SessionBurn: Codable, Equatable, Sendable {
     public var weightedPerMinute: Double { counts.weighted / minutes }
 
     /// "×10 · 350k ctx": calls in the window and the context each carried.
+    /// Without calls in the window, the context of the latest call: "230k ctx".
+    /// Empty when the transcript has no call at all.
     public var short: String {
-        var parts: [String] = []
-        if counts.calls > 0 { parts.append("×\(counts.calls) · \(ClaudeBurn.tokens(Double(counts.context))) ctx") }
-        return parts.isEmpty ? "idle" : parts.joined(separator: " · ")
+        if counts.calls > 0 { return "×\(counts.calls) · \(ClaudeBurn.tokens(Double(counts.context))) ctx" }
+        if let lastContext, lastContext > 0 { return "\(ClaudeBurn.tokens(Double(lastContext))) ctx" }
+        return ""
     }
 
     public var long: String {
@@ -80,6 +95,88 @@ public enum ClaudeBurn {
         if value >= 10_000 { return String(format: "%.0fk", value / 1_000) }
         if value >= 1_000 { return String(format: "%.1fk", value / 1_000) }
         return String(format: "%.0f", value)
+    }
+}
+
+/// What the tail of a session's transcript says about where it stands.
+public struct TranscriptFacts: Equatable, Sendable {
+    public var title: String?
+    public var lastContext: Int?
+    /// The last thing in the transcript is assistant text whose last
+    /// paragraph contains a question mark: the turn ended on a question.
+    public var asksUser = false
+
+    public init(title: String? = nil, lastContext: Int? = nil, asksUser: Bool = false) {
+        self.title = title
+        self.lastContext = lastContext
+        self.asksUser = asksUser
+    }
+
+    public static func read(_ text: String) -> TranscriptFacts {
+        var facts = TranscriptFacts()
+        var lastText: String?
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            let isTitle = line.contains("\"ai-title\"")
+            let isAssistant = line.contains("\"assistant\"")
+            let isUser = line.contains("\"user\"")
+            guard isTitle || isAssistant || isUser,
+                  let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  object["isSidechain"] as? Bool != true
+            else { continue }
+            switch object["type"] as? String {
+            case "ai-title":
+                if let title = object["aiTitle"] as? String, !title.isEmpty { facts.title = title }
+            case "assistant":
+                guard let message = object["message"] as? [String: Any] else { continue }
+                if let usage = message["usage"] as? [String: Any] {
+                    let context = ((usage["input_tokens"] as? Int) ?? 0)
+                        + ((usage["cache_creation_input_tokens"] as? Int) ?? 0)
+                        + ((usage["cache_read_input_tokens"] as? Int) ?? 0)
+                    if context > 0 { facts.lastContext = context }
+                }
+                for block in (message["content"] as? [[String: Any]]) ?? [] {
+                    switch block["type"] as? String {
+                    case "text": lastText = block["text"] as? String
+                    case "tool_use": lastText = nil
+                    default: break
+                    }
+                }
+            case "user":
+                // A prompt from the user answers whatever was asked; a tool
+                // result is part of the same turn.
+                guard let message = object["message"] as? [String: Any] else { continue }
+                if message["content"] is String { lastText = nil; continue }
+                let blocks = (message["content"] as? [[String: Any]]) ?? []
+                if blocks.contains(where: { $0["type"] as? String == "text" }) { lastText = nil }
+            default:
+                continue
+            }
+        }
+        facts.asksUser = lastText.map(endsOnQuestion) ?? false
+        return facts
+    }
+
+    /// The last paragraph outside code fences contains a question mark.
+    static func endsOnQuestion(_ text: String) -> Bool {
+        var inFence = false
+        var paragraphs: [String] = []
+        var current = ""
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                inFence.toggle()
+                continue
+            }
+            if inFence { continue }
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                if !current.isEmpty { paragraphs.append(current) }
+                current = ""
+            } else {
+                current += line + "\n"
+            }
+        }
+        if !current.isEmpty { paragraphs.append(current) }
+        return paragraphs.last?.contains("?") ?? false
     }
 }
 
@@ -158,10 +255,17 @@ public enum ClaudeTranscripts {
         window: TimeInterval = ClaudeBurn.window
     ) -> SessionBurn {
         let since = now.addingTimeInterval(-window)
+        let urls = transcriptURLs(for: session, home: home)
+        let texts = urls.map { tail($0) }
+        let counted = texts.compactMap { $0 }.reduce(TokenCounts()) { $0 + counts(in: $1, since: since) }
+        // Title, latest context and the last turn come from the session's own
+        // transcript, never from a subagent's.
+        let main = urls.first?.lastPathComponent == "\(session.sessionId).jsonl" ? texts.first ?? nil : nil
+        let facts = main.map { TranscriptFacts.read($0) } ?? TranscriptFacts()
         return SessionBurn(
             pid: session.pid, name: session.name, cwd: session.cwd,
-            counts: counts(at: transcriptURLs(for: session, home: home), since: since),
-            minutes: window / 60
+            counts: counted, minutes: window / 60,
+            lastContext: facts.lastContext, title: facts.title, asksUser: facts.asksUser
         )
     }
 

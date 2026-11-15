@@ -321,8 +321,11 @@ final class ClaudeSectionView: NSView {
         }
 
         let sessions = model.sessions
-        sessionsDetail.stringValue = sessions.summary
-        sessionsDetail.textColor = sessions.waitingCount > 0
+        let burns = model.burns
+        let asking: (ClaudeSession) -> Bool = { burns[$0.pid]?.asksUser == true }
+        sessionsDetail.stringValue = sessions.turnSummary(asking: asking)
+        let turns = sessions.sessions.map { ClaudeSessionsSnapshot.turn($0.status, asksUser: asking($0)) }
+        sessionsDetail.textColor = turns.contains(where: \.needsUser)
             ? Palette.amber
             : sessions.busyCount > 0 ? Palette.blue : Palette.secondary
         copyAllLabel.isHidden = sessions.sessions.isEmpty
@@ -446,21 +449,24 @@ final class ClaudeSessionRowView: NSView {
     ) {
         self.session = session
         self.lines = lines
+        // The turn, not the session's age: working, needs you (a prompt blocks
+        // it), asks you (the turn ended on a question) or done.
+        let turn = ClaudeSessionsSnapshot.turn(session.status, asksUser: burn?.asksUser == true)
         let color: NSColor
-        switch session.status {
-        case .busy, .shell: color = Palette.blue
-        case .waiting: color = Palette.amber
-        case .idle: color = Palette.mint
+        switch turn {
+        case .working: color = Palette.blue
+        case .needsYou, .asksYou: color = Palette.amber
+        case .done: color = Palette.mint
         case .unknown: color = Palette.secondary
         }
         dot.layer?.backgroundColor = color.cgColor
-        nameLabel.stringValue = session.name
+        // Claude Code's own title tells two sessions in one directory apart;
+        // the registry name stays in the tooltip and the copied line.
+        nameLabel.stringValue = burn?.title ?? session.name
         cwdLabel.stringValue = session.abbreviatedCwd()
-        let rate = burn.map { $0.short == "idle" ? "" : " · \($0.short)" } ?? ""
-        ageLabel.stringValue = "\(session.status.rawValue) · \(Format.age(since: session.startedAt, now: now))\(rate)"
-        ageLabel.textColor = session.status.isWorking
-            ? Palette.blue
-            : session.status == .waiting ? Palette.amber : Palette.secondary
+        let rate = burn.map(\.short).flatMap { $0.isEmpty ? nil : " · \($0)" } ?? ""
+        ageLabel.stringValue = "\(turn.rawValue)\(rate)"
+        ageLabel.textColor = turn == .working ? Palette.blue : turn.needsUser ? Palette.amber : Palette.secondary
 
         if let autoFix {
             let (fix, state) = autoFix
@@ -498,7 +504,8 @@ final class ClaudeSessionRowView: NSView {
             label.toolTip = line.plain
         }
 
-        toolTip = "pid \(session.pid) · \(session.cwd)\nsession \(session.sessionId)"
+        toolTip = (burn?.title.map { "\($0)\n" } ?? "")
+            + "\(session.name) · pid \(session.pid) · \(session.cwd)\nsession \(session.sessionId)"
             + "\n\(session.displayKind) · \(session.statusText)"
             + (session.version.map { "\nClaude Code \($0)" } ?? "")
             + (burn.map { "\n\($0.long)" } ?? "")
@@ -519,7 +526,7 @@ final class ClaudeSessionRowView: NSView {
             ceil((nameLabel.stringValue as NSString).size(
                 withAttributes: [.font: nameLabel.font as Any]
             ).width) + 4,
-            marker.isHidden ? 140 : 110
+            marker.isHidden ? 165 : 130
         )
         dot.frame = NSRect(x: 0, y: top + 7.5, width: 7, height: 7)
         nameLabel.frame = NSRect(x: 13, y: top + 3, width: nameWidth, height: 16)

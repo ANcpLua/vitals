@@ -91,6 +91,12 @@ row and a submenu or their own panel.
   native installer runs `~/.local/share/claude/versions/<version>`, so the kernel
   names the process after the version number; `ProcessName` turns that back into
   `claude`.
+- **Session turn and title** (`TranscriptFacts` in `ClaudeBurn.swift`): the main
+  transcript's tail gives the last `ai-title` (row name), the context of the latest
+  call, and whether the turn ended on a question: last assistant text, last paragraph
+  outside code fences contains `?`, no user prompt or tool call after it. Sidechain
+  lines never count. Claude Code does not persist its prompt suggestion, so there is
+  nothing better to read; keep the heuristic simple.
 - **Session burn** (`ClaudeBurn.swift`):
   per session the transcript
   `~/.claude/projects/<cwd with non-alphanumerics as dashes>/<sessionId>.jsonl`

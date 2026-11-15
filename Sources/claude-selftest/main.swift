@@ -460,6 +460,47 @@ expect(counted.total == 122 && counted.context == 60 && abs(counted.weighted - (
 let burn = SessionBurn(pid: 4242, name: "ancplua-a4", cwd: "/Users/ancplua/x", counts: TokenCounts(calls: 10, input: 320, output: 16_976, cacheWrite: 20_621, cacheRead: 3_542_066), minutes: 15)
 expect(burn.short == "×10 · 356k ctx" && abs(burn.outputPerMinute - 1_131.7) < 0.1 && abs(burn.tokensPerMinute - 238_665.5) < 0.1, "burn presentation: \(burn.short) \(burn.outputPerMinute)")
 
+// Transcript facts: title, latest context, and whether the turn ended on a question.
+do {
+    func j(_ object: [String: Any]) -> String {
+        String(data: try! JSONSerialization.data(withJSONObject: object), encoding: .utf8)!
+    }
+    func say(_ text: String, context: Int = 0) -> String {
+        j(["type": "assistant", "message": ["content": [["type": "text", "text": text]],
+           "usage": ["input_tokens": context, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0]]])
+    }
+    let title = j(["type": "ai-title", "aiTitle": "Ping command for upload test"])
+    let tool = j(["type": "assistant", "message": ["content": [["type": "tool_use", "name": "Bash"]]]])
+    let result = j(["type": "user", "message": ["content": [["type": "tool_result", "content": "ok"]]]])
+    let prompt = j(["type": "user", "message": ["content": "yes, push it"]])
+    let side = j(["type": "assistant", "isSidechain": true, "message": ["content": [["type": "text", "text": "Subagent asks?"]]]])
+
+    let asked = TranscriptFacts.read([title, tool, result, say("Done.\n\nShould I push to GitHub?", context: 230_000)].joined(separator: "\n"))
+    expect(asked == TranscriptFacts(title: "Ping command for upload test", lastContext: 230_000, asksUser: true),
+           "a turn that ends on a question asks the user, got \(asked)")
+    let midQuestion = TranscriptFacts.read(say("Should I push? The repo is public."))
+    expect(midQuestion.asksUser, "a question inside the last paragraph still asks")
+    let done = TranscriptFacts.read([say("Is this right?\n\nIt is pushed and CI is green."), side].joined(separator: "\n"))
+    expect(!done.asksUser, "only the last paragraph counts, and a subagent's question is not the session's")
+    let answered = TranscriptFacts.read([say("Push?"), prompt].joined(separator: "\n"))
+    let working = TranscriptFacts.read([say("Push?"), tool].joined(separator: "\n"))
+    let fenced = TranscriptFacts.read(say("Run this:\n\n```\nls ?\n```\n\nThat lists it."))
+    expect(!answered.asksUser && !working.asksUser && !fenced.asksUser,
+           "a user prompt answers, a tool call continues the turn, a code block never asks")
+    expect(ClaudeSessionsSnapshot.turn(.idle, asksUser: true) == .asksYou
+           && ClaudeSessionsSnapshot.turn(.idle, asksUser: false) == .done
+           && ClaudeSessionsSnapshot.turn(.waiting, asksUser: false) == .needsYou
+           && ClaudeSessionsSnapshot.turn(.shell, asksUser: true) == .working, "turn from status and question")
+    let now = Date()
+    let a = ClaudeSession(pid: 1, sessionId: "a", name: "x-1", status: .idle, cwd: "/x", startedAt: now, updatedAt: now, version: nil)
+    let b = ClaudeSession(pid: 2, sessionId: "b", name: "x-2", status: .idle, cwd: "/x", startedAt: now, updatedAt: now, version: nil)
+    let c = ClaudeSession(pid: 3, sessionId: "c", name: "x-3", status: .busy, cwd: "/x", startedAt: now, updatedAt: now, version: nil)
+    let summary = ClaudeSessionsSnapshot(sessions: [a, b, c], capturedAt: now).turnSummary { $0.pid == 1 }
+    expect(summary == "1 working · 1 asks you · 1 done", "turn summary: \(summary)")
+    let quiet = SessionBurn(pid: 1, name: "x", cwd: "/x", counts: TokenCounts(), minutes: 15, lastContext: 230_000)
+    expect(quiet.short == "230k ctx", "without calls in the window the latest context still shows: \(quiet.short)")
+}
+
 // Prompt cache from transcript usage
 do {
     let t0 = Date(timeIntervalSince1970: 1_800_000_000)

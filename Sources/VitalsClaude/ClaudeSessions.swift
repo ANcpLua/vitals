@@ -110,6 +110,39 @@ public struct ClaudeSessionsSnapshot: Sendable, Equatable {
         sessions.filter { $0.status == .waiting }.count
     }
 
+    /// Where each session's turn stands, for the row and the header:
+    /// `waiting` (a prompt blocks it) and an idle turn that ended on a
+    /// question both need the user; an idle turn that ended otherwise is done.
+    public enum Turn: String, Sendable, Equatable {
+        case working
+        case needsYou = "needs you"
+        case asksYou = "asks you"
+        case done
+        case unknown
+
+        public var needsUser: Bool { self == .needsYou || self == .asksYou }
+    }
+
+    public static func turn(_ status: ClaudeSession.Status, asksUser: Bool) -> Turn {
+        switch status {
+        case .busy, .shell: .working
+        case .waiting: .needsYou
+        case .idle: asksUser ? .asksYou : .done
+        case .unknown: .unknown
+        }
+    }
+
+    /// `1 working · 1 asks you · 2 done`, only the parts that occur.
+    public func turnSummary(asking: (ClaudeSession) -> Bool) -> String {
+        if sessions.isEmpty { return "none running" }
+        var counts: [Turn: Int] = [:]
+        for session in sessions {
+            counts[Self.turn(session.status, asksUser: asking(session)), default: 0] += 1
+        }
+        let order: [Turn] = [.working, .needsYou, .asksYou, .done, .unknown]
+        return order.compactMap { turn in counts[turn].map { "\($0) \(turn.rawValue)" } }.joined(separator: " · ")
+    }
+
     /// `2 busy · 1 waiting · 3 idle`; the waiting part only when a session waits.
     public var summary: String {
         if sessions.isEmpty { return "none running" }

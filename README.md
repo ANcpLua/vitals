@@ -37,16 +37,23 @@ acknowledged, not what waits in the Mac's send buffer.
 
 Per live session the transcript under `~/.claude/projects` gives calls,
 context per call and output rate for the last 15 minutes, shown in the
-session row as `×10 · 350k ctx`. Cache reads of a large context dwarf
+session row as `×10 · 350k ctx`; a session without calls in that window shows the
+context of its latest call (`230k ctx`). Cache reads of a large context dwarf
 everything else, so the tooltip ranks by price-weighted tokens, never raw
 tokens per minute. The usage bars show what the endpoint reports and nothing
 more: no forecast, because a rate measured over a 15-minute burst says
 nothing about the hours ahead, and the 5-hour window already stops a burst.
 
 The list holds terminal sessions and the ones Claude Code's daemon hosts in the
-background. A session that waits for you, at a permission prompt or a question,
-turns amber and is counted in the Sessions row (`1 busy · 1 waiting · 2 idle`);
-its tooltip says what it waits for. An idle session stays listed while its
+background. Each row is named by Claude Code's own title for the session, so two
+sessions in the same directory can be told apart; the registry name is in the
+tooltip. Instead of the session's age the row says where its turn stands:
+`working`, `needs you` when a permission prompt or question blocks it, `asks you`
+when its last turn ended on text whose last paragraph asks something, and `done`
+otherwise. Both kinds of waiting turn amber and are counted in the Sessions row
+(`1 working · 1 asks you · 2 done`); the tooltip says what a blocked session waits
+for. `asks you` is read from the transcript and can be wrong; the prompt cache line
+below each row stays the measure of how long a session can wait. An idle session stays listed while its
 process runs; a record that does not say when its process started drops out
 after 24 idle hours.
 
