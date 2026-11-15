@@ -4,6 +4,10 @@ find a alternative to Format: [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ## Unreleased
 
+### Added
+- `docs/feature/`: a template for feature proposals an agent can own, and the first
+  proposal, a marker for sessions that spend money through an API key.
+
 ### Changed
 - Session rows say where the turn stands instead of how old the session is:
   `working`, `needs you` (a prompt blocks it), `asks you` (the last turn ended on a

@@ -9,6 +9,9 @@ CLI link `~/.local/bin/vitals`.
   lost credential registry, reinstalling, and credential monitoring. It does not depend
   on previous chat context. Keep it and [schema/keys.schema.json](schema/keys.schema.json)
   aligned when changing setup, registry storage or provider checks.
+- [docs/feature/](docs/feature/) holds feature proposals an agent can own: copy
+  [feature-template.md](docs/feature/feature-template.md) to the next `NNN-name.md`, keep
+  it current while building, set `status` when it ships.
 - [CHANGELOG.md](CHANGELOG.md) gets one bullet per change.
 - The machine itself (tools, shell, other agents' setup) belongs to the dotfiles
   repository, `~/.local/share/chezmoi`; start there with its `AGENTS.md`.
